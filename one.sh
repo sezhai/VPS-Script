@@ -417,7 +417,7 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if apt update & apt install sudo -y; then
+                    1) if apt install sudo -y; then
                             echo -e "\e[32msudo 安装完成！\e[0m"
                         else
                             echo -e "\e[31msudo 安装失败！\e[0m"
@@ -440,7 +440,7 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y curl; then
+                    1) if sudo apt install -y curl; then
                            echo -e "\e[32mcurl 安装完成！\e[0m"
                         else
                             echo -e "\e[31mcurl 安装失败！\e[0m"
@@ -463,7 +463,7 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y nano; then
+                    1) if sudo apt install -y nano; then
                             echo -e "\e[32mnano 安装完成！\e[0m"
                         else
                             echo -e "\e[31mnano 安装失败！\e[0m"
@@ -486,7 +486,7 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y vim; then
+                    1) if sudo apt install -y vim; then
                             echo -e "\e[32mvim 安装完成！\e[0m"
                         else
                             echo -e "\e[31mvim 安装失败！\e[0m"
@@ -509,7 +509,7 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y zip; then
+                    1) if sudo apt install -y zip; then
                             echo -e "\e[32mzip 安装完成！\e[0m"
                         else
                             echo -e "\e[31mzip 安装失败！\e[0m"
@@ -532,7 +532,7 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y git; then
+                    1) if sudo apt install -y git; then
                             echo -e "\e[32mgit 安装完成！\e[0m"
                         else
                            echo -e "\e[31mgit 安装失败！\e[0m"
@@ -555,7 +555,7 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y htop; then
+                    1) if sudo apt install -y htop; then
                             echo -e "\e[32mhtop 安装完成！\e[0m"
                         else
                             echo -e "\e[31mhtop 安装失败！\e[0m"
