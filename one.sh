@@ -417,7 +417,7 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if apt update && apt install sudo -y; then
+                    1) if apt update & apt install sudo -y; then
                             echo -e "\e[32msudo 安装完成！\e[0m"
                         else
                             echo -e "\e[31msudo 安装失败！\e[0m"
