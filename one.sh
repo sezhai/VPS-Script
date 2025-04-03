@@ -833,6 +833,9 @@ install_xray_tls() {
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
+            "") 
+                return
+                ;;                                   
             *)
                 echo -e "\e[31m无效选项，请重新输入。\e[0m"
                 ;;
@@ -952,6 +955,9 @@ install_xray_reality() {
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
+            "") 
+                return
+                ;;                        
             *)
                 echo -e "\e[31m无效选项，请重新输入。\e[0m"
                 ;;
