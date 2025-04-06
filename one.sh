@@ -34,7 +34,7 @@ view_vps_info() {
     echo -e "\e[1;34mCPU频率:\e[0m \e[32m$(lscpu | grep 'CPU MHz' | awk -F: '{print $2}' | xargs) MHz\e[0m"
     echo "-------------"
     echo -e "\e[1;34mCPU占用:\e[0m \e[32m$(top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}')%\e[0m"
-    echo -e "\e[1;34m系统负载:\e[0m \e[32m$(uptime | awk -F'load average:' '{print $2}' | sed 's/ //g')\e[0m"
+    echo -e "\e[1;34m系统负载:\e[0m \e[32m$(awk '{print $1, $2, $3}' /proc/loadavg)\e[0m"
     local mem_info=$(free -m | awk '/Mem:/ {total=$2; used=$3; if (total > 0) printf "%.2f/%.2f MB (%.2f%%)", used, total, used*100/total; else print "数据不可用"}')
     echo -e "\e[1;34m物理内存:\e[0m \e[32m$mem_info \e[0m"
     local swap_info=$(free -m | awk '/Swap:/ {total=$2; used=$3; if (total > 0) printf "%.0fMB/%.0fMB (%.0f%%)", used, total, used*100/total; else print "数据不可用" }')
