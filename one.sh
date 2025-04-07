@@ -173,6 +173,7 @@ root_login() {
             2) 
                 sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config;
                 sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config;
+                echo -e "\e[32m配置修改成功！\e[0m"
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
