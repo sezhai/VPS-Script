@@ -40,7 +40,7 @@
       "type": "vless",
       "tag": "reality",
       "listen": "::",
-      "listen_port": 31934, //端口可自定义
+      "listen_port": 2053, //端口可自定义
       "users": [
         {
           "uuid": "", //生成后填入
@@ -67,7 +67,7 @@
       "type": "hysteria2",
       "tag": "hysteria2",
       "listen": "::",
-      "listen_port": 41934, //端口可自定义
+      "listen_port": 8443, //端口可自定义
       "users": [
         {
           "password": ""  //填入生成的密码
