@@ -18,7 +18,8 @@ display_main_menu() {
     echo "5) 申请证书"
     echo "6) 安装Xray"
     echo "7) 安装hysteria2"
-    echo "8) 安装1Panel"
+    echo "8) 安装sing-box"
+    echo "9) 安装1Panel"
     echo "========================================="
 }
 
@@ -743,7 +744,7 @@ install_xray_tls() {
         echo "========================================="
         echo -e "               \e[1;34mVLESS-WS-TLS\e[0m   "
         echo "========================================="
-        echo "1) 安装/升级"
+        echo "1) 安装升级"
         echo "2) 编辑配置"
         echo "3) 重启服务"
         echo "========================================="
@@ -752,11 +753,11 @@ install_xray_tls() {
             1)
                if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
                    sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-TLS-WS%20(recommended)/config_server.jsonc"; then
-                echo -e "\e[32mXray 安装/升级完成！\e[0m"
+                echo -e "\e[32mXray 安装升级完成！\e[0m"
                 echo "以下是uuid："
                 echo -e "\e[34m$(xray uuid)\e[0m"
                 else
-                echo -e "\e[31mXray 安装/升级失败！\e[0m"
+                echo -e "\e[31mXray 安装升级失败！\e[0m"
                 fi
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
@@ -850,7 +851,7 @@ install_xray_reality() {
         echo "========================================="
         echo -e "               \e[1;34mVLESS-TCP-REALITY\e[0m   "
         echo "========================================="
-        echo "1) 安装/升级"
+        echo "1) 安装升级"
         echo "2) 编辑配置"
         echo "3) 重启服务"
         echo "========================================="
@@ -859,7 +860,7 @@ install_xray_reality() {
             1)
                if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
                   sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-XTLS-Vision-REALITY/config_server.jsonc"; then
-                echo -e "\e[32mXray 安装/升级完成！\e[0m"
+                echo -e "\e[32mXray 安装升级完成！\e[0m"
                 echo "以下是UUID："
                 echo -e "\e[34m$(xray uuid)\e[0m"
                 echo "以下是私钥："
@@ -870,7 +871,7 @@ install_xray_reality() {
                 echo "以下是ShortIds："                
                 echo -e "\e[34m$(openssl rand -hex 8)\e[0m"
                 else
-                echo -e "\e[31mXray 安装/升级失败！\e[0m"
+                echo -e "\e[31mXray 安装升级失败！\e[0m"
                 fi
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
@@ -972,7 +973,7 @@ install_hysteria2() {
         echo "========================================="
         echo -e "           \e[1;32m安装Hysteria2\e[0m  "
         echo "========================================="
-        echo "1) 安装/升级"
+        echo "1) 安装升级"
         echo "2) 编辑配置"
         echo "3) 重启服务"
         echo "4) 端口跳跃"
@@ -985,9 +986,9 @@ install_hysteria2() {
                    sudo systemctl enable --now hysteria-server.service && \
                    sysctl -w net.core.rmem_max=16777216 && \
                    sysctl -w net.core.wmem_max=16777216; then
-                echo -e "\e[32mhysteria2 安装/升级完成！\e[0m"
+                echo -e "\e[32mhysteria2 安装升级完成！\e[0m"
                 else
-                echo -e "\e[31mhysteria2 安装/升级失败！\e[0m"
+                echo -e "\e[31mhysteria2 安装升级失败！\e[0m"
                 fi
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
@@ -1102,6 +1103,131 @@ install_hysteria2() {
     done
 }
 
+# 安装sing-box
+install_sing-box() {
+    while true; do    
+        echo "========================================="
+        echo -e "           \e[1;32m安装sing-box\e[0m  "
+        echo "========================================="
+        echo "1) 安装升级"
+        echo "2) 编辑配置"
+        echo "3) 重启服务"
+        echo "4) 卸载服务"
+        echo "========================================="
+        read -p "请输入数字 [1-4] 选择 (默认回车退出)：" singbox_choice
+        case "$singbox_choice" in
+            1)
+               if bash <(curl -fsSL https://sing-box.app/deb-install.sh) && \
+                  sudo curl -L -o /etc/sing-box/config.json "https://raw.githubusercontent.com/sezhai/VPS-Script/refs/heads/main/extras/sing-box/config.json"; then
+                   echo -e "\e[32msing-box 安装升级成功！\e[0m"
+               else
+                   echo -e "\e[31msing-box 安装升级失败！\e[0m"
+               fi
+               read -n 1 -s -r -p "按任意键返回..."
+               echo
+               ;;
+            2)
+                echo -e "\e[33m提示：根据提示修改配置文件。\e[0m"
+                read -n 1 -s -r -p "按任意键继续..."                                                
+                if ! command -v nano >/dev/null 2>&1; then
+                sudo apt update >/dev/null 2>&1 && sudo apt install -y nano >/dev/null 2>&1
+                fi
+                if ! command -v nano >/dev/null 2>&1; then
+                echo -e "\e[31m无法安装或找到 nano。\e[0m" >&2
+                exit 1
+                fi
+                sudo nano /etc/sing-box/config.json
+                read -n 1 -s -r -p "按任意键返回..."
+                echo
+                ;;
+            3)
+                CONFIG_PATH="/etc/sing-box/config.json"
+                sudo systemctl restart sing-box
+                sleep 2
+                if ! systemctl is-active --quiet sing-box; then
+                    echo -e "\e[31m未能启动 sing-box 服务，请检查日志。\e[0m"
+                    systemctl status sing-box --no-pager
+                    exit 1
+                else
+                    echo -e "\e[32msing-box已启动！\e[0m"
+                fi
+                get_ip() {
+                    curl -s https://api.ipify.org || echo "127.0.0.1"
+                }
+                urlencode() {
+                    local s="$1" ch
+                    for ((i=0; i<${#s}; i++)); do
+                        ch="${s:i:1}"
+                        case "$ch" in
+                            [a-zA-Z0-9.~_-]) printf '%s' "$ch" ;;
+                            *) printf '%%%02X' "'$ch" ;;
+                        esac
+                    done
+                }
+                ip=$(get_ip)
+                vmess_uuid=$(grep -Pzo '(?s)"tag": "vmess".*?uuid":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                vmess_port=$(grep -Pzo '(?s)"tag": "vmess".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
+                vmess_path=$(grep -Pzo '(?s)"tag": "vmess".*?path":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                vmess_host=$(grep -Pzo '(?s)"tag": "vmess".*?server_name":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                vmess_sni="$vmess_host"
+                vmess_json=$(cat <<EOF
+                {
+                "v": "2",
+                "ps": "vmess",
+                "add": "$ip",
+                "port": "$vmess_port",
+                "id": "$vmess_uuid",
+                "aid": "0",
+                "scy": "auto",
+                "net": "ws",
+                "type": "none",
+                "host": "$vmess_host",
+                "path": "$vmess_path",
+                "tls": "tls",
+                "sni": "$vmess_sni",
+                "alpn": "http/1.1",
+                "fp": "chrome"
+                }
+EOF
+)
+                vmess_link="vmess://$(echo -n "$vmess_json" | base64 -w0)"
+                vless_uuid=$(grep -Pzo '(?s)"tag": "reality".*?uuid":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                vless_port=$(grep -Pzo '(?s)"tag": "reality".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
+                vless_server=$(grep -Pzo '(?s)"tag": "reality".*?handshake":\s*\{.*?server":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                vless_sni=$(grep -Pzo '(?s)"tag": "reality".*?server_name":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                vless_sid=$(grep -Pzo '(?s)"tag": "reality".*?short_id":\s*\[\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                vless_link="vless://$vless_uuid@$vless_server:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&sid=$vless_sid&type=tcp&headerType=none#reality"
+                h2_pass_raw=$(grep -Pzo '(?s)"tag": "hysteria2".*?password":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                h2_pass=$(urlencode "$h2_pass_raw")
+                h2_port=$(grep -Pzo '(?s)"tag": "hysteria2".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
+                h2_domain=$(grep -Pzo '(?s)"tag": "hysteria2".*?masquerade":\s*"https?://\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                h2_link="hysteria2://$h2_pass@$ip:$h2_port?sni=$h2_domain&insecure=0#hysteria2"
+                echo "vmess 链接如下："
+                echo -e "\e[34m$vmess_link\e[0m"
+                echo "reality 链接如下："
+                echo -e "\e[34m$vless_link\e[0m"
+                echo "hysteria2 链接如下："
+                echo -e "\e[34m$h2_link\e[0m"
+                read -n 1 -s -r -p "按任意键返回..."
+                echo
+                ;;
+            4)
+               if systemctl disable --now sing-box && rm -f /usr/local/bin/sing-box /etc/systemd/system/sing-box.service && rm -rf /var/lib/sing-box /etc/sing-box; then
+                echo -e "\e[32msing-box 已卸载。\e[0m"
+                fi
+                read -n 1 -s -r -p "按任意键返回..."
+                echo
+                ;;
+            "") 
+                return
+                ;;            
+            *)
+                echo -e "\e[31m无效选项，请重新输入。\e[0m"
+                ;;
+        esac
+    done
+}
+
 # 安装1Panel
 install_1panel() {
     while true; do
@@ -1174,7 +1300,7 @@ install_1panel() {
 
 while true; do
     display_main_menu
-    read -p "请输入数字 [1-7] 选择(默认回车退出)：" choice
+    read -p "请输入数字 [1-9] 选择(默认回车退出)：" choice
     if [[ -z "$choice" ]]; then
       echo -e "\e[32m退出脚本，感谢使用！\e[0m"
       exit 0
@@ -1187,9 +1313,10 @@ while true; do
         5) apply_certificate ;;
         6) install_xray ;;
         7) install_hysteria2 ;;
-        8) install_1panel ;;
+        8) install_sing-box;;
+        9) install_1panel ;;
         *)
-            echo -e "\e[31m无效选项，请输入数字 1-7 或直接回车退出！\e[0m"
+            echo -e "\e[31m无效选项，请输入数字 1-9 或直接回车退出！\e[0m"
             ;;
     esac
 done
