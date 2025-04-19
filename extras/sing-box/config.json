@@ -6,9 +6,9 @@
     "timestamp": true
   },
   "inbounds": [
-    {    
+    {
       "type": "vmess",
-      "tag": "vmess",      
+      "tag": "vmess",
       "listen": "::",
       "listen_port": 443, //端口可自定义
       "sniff": true,
@@ -35,9 +35,9 @@
         "enabled": true,
         "padding": false
       }
-    },    
+    },
     {
-      "type": "vless",      
+      "type": "vless",
       "tag": "reality",
       "listen": "::",
       "listen_port": 31934, //端口可自定义
@@ -88,7 +88,7 @@
     {
       "type": "direct"
     }
-  ], 
+  ],
   "route": {
     "rules": [
       {
