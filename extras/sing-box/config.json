@@ -88,21 +88,5 @@
     {
       "type": "direct"
     }
-  ],
-  "route": {
-    "rules": [
-      {
-        "inbound": ["vmess"],
-        "outbound": "direct"
-      },
-      {
-        "inbound": ["reality"],
-        "outbound": "direct"
-      },
-      {
-        "inbound": ["hysteria2"],
-        "outbound": "direct"
-      }
-    ]
-  }
+  ]
 }
