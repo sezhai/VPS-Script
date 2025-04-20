@@ -1193,10 +1193,10 @@ EOF
                 vmess_link="vmess://$(echo -n "$vmess_json" | base64 -w0)"
                 vless_uuid=$(grep -Pzo '(?s)"tag": "reality".*?uuid":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
                 vless_port=$(grep -Pzo '(?s)"tag": "reality".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
-                vless_server=$(grep -Pzo '(?s)"tag": "reality".*?handshake":\s*\{.*?server":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                server_ip=$(curl -s icanhazip.com)
                 vless_sni=$(grep -Pzo '(?s)"tag": "reality".*?server_name":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
                 vless_sid=$(grep -Pzo '(?s)"tag": "reality".*?short_id":\s*\[\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vless_link="vless://$vless_uuid@$vless_server:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&sid=$vless_sid&type=tcp&headerType=none#reality"
+                vless_link="vless://$vless_uuid@$server_ip:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&sid=$vless_sid&type=tcp&headerType=none#reality"
                 h2_pass_raw=$(grep -Pzo '(?s)"tag": "hysteria2".*?password":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
                 h2_pass=$(urlencode "$h2_pass_raw")
                 h2_port=$(grep -Pzo '(?s)"tag": "hysteria2".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
