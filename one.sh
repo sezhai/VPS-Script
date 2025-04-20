@@ -1013,7 +1013,7 @@ install_hysteria2() {
                     local cert_file=$1
                     openssl x509 -in "$cert_file" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
                     openssl x509 -in "$cert_file" -text -noout | grep -Po "CN=[^ ]*" | sed 's/CN=//'
-}
+                }
                 if [ ! -f "$config_file" ]; then
                     echo -e "\e[31m未能找到配置文件。\e[0m"
                     break
@@ -1028,25 +1028,26 @@ install_hysteria2() {
                     else
                         echo -e "\e[32mhysteria已启动！\e[0m"
                     fi
-                port=$(grep "^listen:" "$config_file" | awk -F: '{print $3}' || echo "443")
-                password=$(grep "^  password:" "$config_file" | awk '{print $2}')
-                domain=$(grep "domains:" "$config_file" -A 1 | tail -n 1 | tr -d " -")
-                if [ -z "$domain" ]; then
-                    cert_path=$(grep "cert:" "$config_file" | awk '{print $2}' | tr -d '"')
-                    if [ -z "$cert_path" ] || [ ! -f "$cert_path" ]; then
-                        echo -e "\e[31m没有找到域名或证书。\e[0m"
-                        break
-                    fi
-                    domain=$(get_domain_from_cert "$cert_path")
+                    port=$(grep "^listen:" "$config_file" | awk -F: '{print $3}' || echo "443")
+                    password=$(grep "^  password:" "$config_file" | awk '{print $2}')
+                    domain=$(grep "domains:" "$config_file" -A 1 | tail -n 1 | tr -d " -")
                     if [ -z "$domain" ]; then
-                        echo -e "\e[31m从证书中提取域名失败。\e[0m"
-                        break
+                        cert_path=$(grep "cert:" "$config_file" | awk '{print $2}' | tr -d '"')
+                        if [ -z "$cert_path" ] || [ ! -f "$cert_path" ]; then
+                            echo -e "\e[31m没有找到域名或证书。\e[0m"
+                            break
+                        fi
+                        domain=$(get_domain_from_cert "$cert_path")
+                        if [ -z "$domain" ]; then
+                            echo -e "\e[31m从证书中提取域名失败。\e[0m"
+                            break
+                        fi
                     fi
-                fi
-                hysteria2_uri="hysteria2://$password@$domain:$port?insecure=0#hysteria"
-                echo "hysteria2 链接如下："
-                echo -e "\e[34m$hysteria2_uri\e[0m"
-                break
+                    ip=$(hostname -I | awk '{print $1}')
+                    hysteria2_uri="hysteria2://$password@$ip:$port?sni=$domain&insecure=0#hysteria"
+                    echo "hysteria2 链接如下："
+                    echo -e "\e[34m$hysteria2_uri\e[0m"
+                    break
                 done
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
