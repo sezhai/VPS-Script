@@ -1197,10 +1197,24 @@ EOF
                 vless_sni=$(grep -Pzo '(?s)"tag": "reality".*?server_name":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
                 vless_sid=$(grep -Pzo '(?s)"tag": "reality".*?short_id":\s*\[\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
                 vless_link="vless://$vless_uuid@$server_ip:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&sid=$vless_sid&type=tcp&headerType=none#reality"
+                get_domain_from_cert() {
+                    local cert_file=$1
+                    openssl x509 -in "$cert_file" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
+                    openssl x509 -in "$cert_file" -text -noout | grep -Po "CN=[^ ]*" | sed 's/CN=//'
+                }
                 h2_pass_raw=$(grep -Pzo '(?s)"tag": "hysteria2".*?password":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
                 h2_pass=$(urlencode "$h2_pass_raw")
                 h2_port=$(grep -Pzo '(?s)"tag": "hysteria2".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
-                h2_domain=$(grep -Pzo '(?s)"tag": "hysteria2".*?masquerade":\s*"https?://\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                cert_path=$(grep -Pzo '(?s)"tag": "hysteria2".*?"certificate_path":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                if [ -z "$cert_path" ] || [ ! -f "$cert_path" ]; then
+                    echo -e "\e[31m没有找到证书路径。\e[0m"
+                    exit 1
+                fi
+                h2_domain=$(get_domain_from_cert "$cert_path")
+                if [ -z "$h2_domain" ]; then
+                    echo -e "\e[31m从证书中提取SNI失败。\e[0m"
+                    exit 1
+                fi
                 h2_link="hysteria2://$h2_pass@$ip:$h2_port?sni=$h2_domain&insecure=0#hysteria2"
                 echo "vmess 链接如下："
                 echo -e "\e[34m$vmess_link\e[0m"
