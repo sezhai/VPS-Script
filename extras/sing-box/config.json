@@ -6,7 +6,7 @@
     "timestamp": true
   },
   "inbounds": [
-//以下是vmess节点，不配置请删除。
+//以下是vmess节点，不配置请删除
     {
       "type": "vmess",
       "tag": "vmess",
@@ -37,8 +37,8 @@
         "padding": false
       }
     },
-//以上是vmess节点，不配置请删除。
-//以下是reality节点，不配置请删除。
+//以上是vmess节点，不配置请删除
+//以下是reality节点，不配置请删除
     {
       "type": "vless",
       "tag": "reality",
@@ -59,15 +59,15 @@
             "server": "", //填入合适的域名
             "server_port": 443
           },
-          "private_key": "",  //填入生成的私钥
+          "private_key": "",  //填入生成的私钥，公钥填入客户端
           "short_id": [
             ""  //可留空，或执行 openssl rand -hex 8 命令生成
           ]
         }
       }
     },
-//以上是reality节点，不配置请删除。
-//以下是hysteria2节点，不配置请删除。
+//以上是reality节点，不配置请删除
+//以下是hysteria2节点，不配置请删除
     {
       "type": "hysteria2",
       "tag": "hysteria2",
@@ -88,7 +88,7 @@
         "key_path": "/path/to/private.key"  //私钥路径，可自定义
       }
     }
-//以上是hysteria2节点，不配置请删除。
+//以上是hysteria2节点，不配置请删除
   ],
   "outbounds": [
     {
