@@ -6,6 +6,7 @@
     "timestamp": true
   },
   "inbounds": [
+//以下是vmess节点，不配置请删除。
     {
       "type": "vmess",
       "tag": "vmess",
@@ -36,6 +37,8 @@
         "padding": false
       }
     },
+//以上是vmess节点，不配置请删除。
+//以下是reality节点，不配置请删除。
     {
       "type": "vless",
       "tag": "reality",
@@ -63,6 +66,8 @@
         }
       }
     },
+//以上是reality节点，不配置请删除。
+//以下是hysteria2节点，不配置请删除。
     {
       "type": "hysteria2",
       "tag": "hysteria2",
@@ -83,6 +88,7 @@
         "key_path": "/path/to/private.key"  //私钥路径，可自定义
       }
     }
+//以上是hysteria2节点，不配置请删除。
   ],
   "outbounds": [
     {
