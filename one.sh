@@ -1043,7 +1043,7 @@ install_hysteria2() {
                             break
                         fi
                     fi
-                    ip=$(hostname -I | awk '{print $1}')
+                    ip=$(curl -s https://ifconfig.me)
                     hysteria2_uri="hysteria2://$password@$ip:$port?sni=$domain&insecure=0#hysteria"
                     echo "hysteria2 链接如下："
                     echo -e "\e[34m$hysteria2_uri\e[0m"
