@@ -142,8 +142,8 @@ enable_bbr() {
     if sysctl net.ipv4.tcp_congestion_control | grep -q 'bbr'; then
     echo -e "\e[32mBBR已开启！\e[0m"
     else
-        sudo tee -a /etc/sysctl.conf <<< "net.core.default_qdisc = fq"
-        sudo tee -a /etc/sysctl.conf <<< "net.ipv4.tcp_congestion_control = bbr"
+        sudo sed -i '$a net.core.default_qdisc = fq' /etc/sysctl.conf
+        sudo sed -i '$a net.ipv4.tcp_congestion_control = bbr' /etc/sysctl.conf
         if sudo sysctl -p; then
            echo -e "\e[32mBBR已开启！\e[0m"
         else
