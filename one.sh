@@ -1119,6 +1119,17 @@ install_sing-box() {
                if bash <(curl -fsSL https://sing-box.app/deb-install.sh) && \
                   sudo curl -L -o /etc/sing-box/config.json "https://raw.githubusercontent.com/sezhai/VPS-Script/refs/heads/main/extras/sing-box/config.json"; then
                    echo -e "\e[32msing-box 安装升级成功！\e[0m"
+                echo "以下是UUID："
+                echo -e "\e[34m$(sing-box generate uuid)\e[0m"
+                keys=$(sing-box generate reality-keypair)
+                export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
+                export PUBLIC_KEY=$(echo "$keys" | awk '/PublicKey/  {print $2}')
+                echo "以下是私钥："
+                echo -e "\e[34m$PRIVATE_KEY\e[0m"
+                echo "以下是公钥："
+                echo -e "\e[34m$PUBLIC_KEY\e[0m"                
+                echo "以下是ShortIds："                
+                echo -e "\e[34m$(sing-box generate rand 8 --hex)\e[0m"                   
                else
                    echo -e "\e[31msing-box 安装升级失败！\e[0m"
                fi
