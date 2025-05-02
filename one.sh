@@ -946,12 +946,10 @@ install_xray_reality() {
                 PORT=${PORT:-"443"}
                 FLOW=$(extract_field "flow" "\"[^\"]*\"")
                 SID=${SHORT_IDS:-""}
-                vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&sid=${SID}&type=tcp&headerType=none#Xray"
+                PBK=${PUBLIC_KEY}
+                vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray"
                 echo "VLESS链接如下："
                 echo -e "\e[34m$vless_uri\e[0m"
-                echo "以下是公钥："
-                echo -e "\e[34m$PUBLIC_KEY\e[0m"
-                echo -e "\e[33m提示：将公钥填入客户端中。\e[0m"
                 break
                 done
                 read -n 1 -s -r -p "按任意键返回..."
