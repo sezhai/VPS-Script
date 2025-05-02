@@ -61,7 +61,7 @@
           },
           "private_key": "",  //填入生成的私钥，公钥填入客户端
           "short_id": [
-            ""  //填入生成的ShortID
+            ""  //填入生成的ShortID或留空
           ]
         }
       }
