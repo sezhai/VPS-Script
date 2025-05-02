@@ -22,7 +22,7 @@
       },
       "users": [
         {
-          "uuid": "", //生成后填入
+          "uuid": "", //填入生成的UUID
           "alterId": 0
         }
       ],
@@ -46,7 +46,7 @@
       "listen_port": 2053, //端口可自定义
       "users": [
         {
-          "uuid": "", //生成后填入
+          "uuid": "", //填入生成的UUID
           "flow": "xtls-rprx-vision"
         }
       ],
@@ -61,7 +61,7 @@
           },
           "private_key": "",  //填入生成的私钥，公钥填入客户端
           "short_id": [
-            ""  //可留空，或执行 openssl rand -hex 8 命令生成
+            ""  //填入生成的ShortID
           ]
         }
       }
@@ -75,7 +75,7 @@
       "listen_port": 8443, //端口可自定义
       "users": [
         {
-          "password": ""  //填入生成的密码
+          "password": ""  //填入生成的UUID
         }
       ],
       "masquerade": "https://www.bing.com", //保留或填入其他合适的域名
