@@ -395,7 +395,7 @@ install_package() {
         echo "========================================="
         echo "1) apt"
         echo "2) sudo"
-        echo "3) curl"
+        echo "3) wget"
         echo "4) nano"
         echo "5) vim"
         echo "6) zip"
@@ -442,16 +442,16 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y curl; then
-                           echo -e "\e[32mcurl 安装完成！\e[0m"
+                    1) if sudo apt update && sudo apt install -y wget; then
+                           echo -e "\e[32mwget 安装完成！\e[0m"
                         else
-                            echo -e "\e[31mcurl 安装失败！\e[0m"
+                            echo -e "\e[31mwget 安装失败！\e[0m"
                         fi
                         ;;
-                    2) if sudo apt remove -y curl; then
-                            echo -e "\e[32mcurl 卸载完成！\e[0m"
+                    2) if sudo apt remove -y wget; then
+                            echo -e "\e[32mwget 卸载完成！\e[0m"
                         else
-                            echo -e "\e[31mcurl 卸载失败！\e[0m"
+                            echo -e "\e[31mwget 卸载失败！\e[0m"
                         fi
                         ;;
                     "") ;;
