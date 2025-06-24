@@ -802,7 +802,7 @@ install_xray_tls() {
                     fi
 }
                 while true; do
-                    sudo systemctl restart xray
+                    sudo -H systemctl restart xray 2>/dev/null
                     sleep 2
                     if ! systemctl is-active --quiet xray; then
                         echo -e "\e[31m未能启动 xray 服务，请检查日志。\e[0m"
@@ -901,23 +901,21 @@ install_xray_reality() {
                     grep -aPo "\"$pattern\":\s*$match" "$CONFIG_PATH" | head -n 1 | sed -E "s/\"$pattern\":\s*//;s/^\"//;s/\"$//"
 }
                 extract_server_name() {
-                    local result=$(grep -aA 2 "\"serverNames\": \[" "$CONFIG_PATH" | awk 'NR==2{gsub(/^\s+|\s*\/\/.*$/,"");split($0,a,","); for (i in a) {gsub(/^[\"\s]+|[\"\s]+$/,"",a[i]);printf "%s ",a[i]}}')
-                    if [[ -n "$result" ]]; then
-                        remove_spaces_and_quotes "$result"
-                    fi
-}
+                    local result=$(grep -A 5 '"serverNames"' "$CONFIG_PATH" | grep -o '"[^"]*"' | head -n 2 | tail -n 1 | sed 's/"//g')
+                    echo "$result"
+                }
                 extract_list_field() {
                     local list_parent=$1
                     local list_field=$2
                     if [[ "$list_field" == "shortIds" || "$list_field" == "serverNames" ]]; then
-                        local result=$(grep -aA 2 "\"$list_field\": \[" "$CONFIG_PATH" | awk 'NR==2{gsub(/^\s+|\s*\/\/.*$/,"");split($0,a,","); for (i in a) {gsub(/^[\"\s]+|[\"\s]+$/,"",a[i]);printf "%s ",a[i]}}')
+                        local result=$(grep -aA 2 "\"$list_field\": \[" "$CONFIG_PATH" | awk 'NR==2{gsub(/^\s+|\s*\/\/.*$/,"");split($0,a,","); for (i in a) {gsub(/^["\s]+|["\s]+$/,"",a[i]);printf "%s ",a[i]}}')
                         if [[ -n "$result" ]]; then
                             remove_spaces_and_quotes "$result"
                         fi
                     else
                         grep -aPoz "\"$list_parent\":\s*\[\s*\{[^}]*\}\s*\]" "$CONFIG_PATH" | grep -aPo "\"$list_field\":\s*\"[^\"]*\"" | head -n 1 | sed -E "s/\"$list_field\":\s*\"([^\"]*)\"/\1/"
                     fi
-}
+                }
                 get_public_ip() {
                     ipv4=$(curl -s https://api.ipify.org)
                     if [[ -n "$ipv4" ]]; then
@@ -927,7 +925,7 @@ install_xray_reality() {
                     fi
 }
                 while true; do
-                    sudo systemctl restart xray
+                    sudo -H systemctl restart xray 2>/dev/null
                     sleep 2
                     if ! systemctl is-active --quiet xray; then
                        echo -e "\e[31m未能启动 xray 服务，请检查日志。\e[0m"
