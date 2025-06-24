@@ -859,7 +859,7 @@ install_xray_reality() {
         case "$xray_choice" in
             1)
                if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
-                  sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-XTLS-Vision-REALITY/config_server.jsonc"; then
+                  sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-REALITY%20(without%20being%20stolen)/config_server.jsonc"; then
                 echo -e "\e[32mXray 安装升级完成！\e[0m"
                 echo "以下是UUID："
                 echo -e "\e[34m$(xray uuid)\e[0m"
