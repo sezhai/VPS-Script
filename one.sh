@@ -1159,8 +1159,12 @@ install_sing-box() {
                 else
                     echo -e "\e[32msing-box已启动！\e[0m"
                 fi
+
                 get_ip() {
-                    curl -s https://api.ipify.org || echo "127.0.0.1"
+                    curl -s -4 https://api.ipify.org 2>/dev/null ||
+                    curl -s -4 https://icanhazip.com 2>/dev/null | tr -d '\n' ||
+                    curl -s -6 https://api6.ipify.org 2>/dev/null ||
+                    echo "127.0.0.1"
                 }
                 urlencode() {
                     local s="$1" ch
@@ -1172,65 +1176,45 @@ install_sing-box() {
                         esac
                     done
                 }
-                ip=$(get_ip)
-                vmess_uuid=$(grep -Pzo '(?s)"tag": "vmess".*?uuid":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vmess_port=$(grep -Pzo '(?s)"tag": "vmess".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
-                vmess_path=$(grep -Pzo '(?s)"tag": "vmess".*?path":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vmess_host=$(grep -Pzo '(?s)"tag": "vmess".*?server_name":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vmess_sni="$vmess_host"
-                vmess_json=$(cat <<EOF
-                {
-                "v": "2",
-                "ps": "vmess",
-                "add": "$ip",
-                "port": "$vmess_port",
-                "id": "$vmess_uuid",
-                "aid": "0",
-                "scy": "auto",
-                "net": "ws",
-                "type": "none",
-                "host": "$vmess_host",
-                "path": "$vmess_path",
-                "tls": "tls",
-                "sni": "$vmess_sni",
-                "alpn": "http/1.1",
-                "fp": "chrome"
-                }
-EOF
-)
-                vmess_link="vmess://$(echo -n "$vmess_json" | base64 -w0)"
-                vless_uuid=$(grep -Pzo '(?s)"tag": "reality".*?uuid":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vless_port=$(grep -Pzo '(?s)"tag": "reality".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
-                server_ip=$(curl -s icanhazip.com)
-                vless_sni=$(grep -Pzo '(?s)"tag": "reality".*?server_name":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vless_pbk=${PUBLIC_KEY}
-                vless_sid=$(grep -Pzo '(?s)"tag": "reality".*?short_id":\s*\[\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vless_link="vless://$vless_uuid@$server_ip:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$vless_pbk&sid=$vless_sid&type=tcp&headerType=none#reality"
                 get_domain_from_cert() {
-                    local cert_file=$1
-                    openssl x509 -in "$cert_file" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
-                    openssl x509 -in "$cert_file" -text -noout | grep -Po "CN=[^ ]*" | sed 's/CN=//'
+                    openssl x509 -in "$1" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
+                    openssl x509 -in "$1" -text -noout | grep -Po "CN=[^ ]*" | sed 's/CN=//'
                 }
-                h2_pass_raw=$(grep -Pzo '(?s)"tag": "hysteria2".*?password":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                h2_pass=$(urlencode "$h2_pass_raw")
-                h2_port=$(grep -Pzo '(?s)"tag": "hysteria2".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
-                cert_path=$(grep -Pzo '(?s)"tag": "hysteria2".*?"certificate_path":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                if [ -z "$cert_path" ] || [ ! -f "$cert_path" ]; then
-                    echo -e "\e[31m没有找到证书路径。\e[0m"
-                    exit 1
+                ip=$(get_ip)
+                if grep -q '"tag":\s*"vmess"' "$CONFIG_PATH"; then
+                    vmess_uuid=$(grep -A 20 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"uuid":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
+                    vmess_port=$(grep -A 5 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
+                    vmess_path=$(grep -A 30 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"path":\s*"[^"]*"' | cut -d'"' -f4)
+                    vmess_host=$(grep -A 30 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"server_name":\s*"[^"]*"' | cut -d'"' -f4)
+                    if [ -n "$vmess_uuid" ] && [ -n "$vmess_port" ]; then
+                        vmess_json='{"v":"2","ps":"vmess","add":"'$ip'","port":"'$vmess_port'","id":"'$vmess_uuid'","aid":"0","scy":"auto","net":"ws","type":"none","host":"'$vmess_host'","path":"'$vmess_path'","tls":"tls","sni":"'$vmess_host'","alpn":"http/1.1","fp":"chrome"}'
+                        echo "vmess 链接如下："
+                        echo -e "\e[34mvmess://$(echo -n "$vmess_json" | base64 -w0)\e[0m"
+                    fi
                 fi
-                h2_domain=$(get_domain_from_cert "$cert_path")
-                if [ -z "$h2_domain" ]; then
-                    echo -e "\e[31m从证书中提取SNI失败。\e[0m"
-                    exit 1
+                if grep -q '"tag":\s*"reality"' "$CONFIG_PATH"; then
+                    vless_uuid=$(grep -A 20 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"uuid":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
+                    vless_port=$(grep -A 5 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
+                    vless_sni=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"server_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
+                    vless_sid=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH" | sed -n '/"short_id"/,/]/p' | grep -o '"[a-fA-F0-9]*"' | head -1 | tr -d '"')
+                    if [ -n "$vless_uuid" ] && [ -n "$vless_port" ]; then
+                        vless_link="vless://$vless_uuid@$ip:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$PUBLIC_KEY&sid=$vless_sid&type=tcp&headerType=none#reality"
+                        echo "reality 链接如下："
+                        echo -e "\e[34m$vless_link\e[0m"
+                    fi
                 fi
-                h2_link="hysteria2://$h2_pass@$ip:$h2_port?sni=$h2_domain&insecure=0#hysteria2"
-                echo "vmess 链接如下："
-                echo -e "\e[34m$vmess_link\e[0m"
-                echo "reality 链接如下："
-                echo -e "\e[34m$vless_link\e[0m"
-                echo "hysteria2 链接如下："
-                echo -e "\e[34m$h2_link\e[0m"
+                if grep -q '"tag":\s*"hysteria2"' "$CONFIG_PATH"; then
+                    h2_pass=$(grep -A 20 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"password":\s*"[^"]*"' | cut -d'"' -f4)
+                    h2_port=$(grep -A 5 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
+                    cert_path=$(grep -A 30 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"certificate_path":\s*"[^"]*"' | cut -d'"' -f4)
+                    if [ -n "$h2_pass" ] && [ -n "$h2_port" ] && [ -f "$cert_path" ]; then
+                        h2_domain=$(get_domain_from_cert "$cert_path")
+                        if [ -n "$h2_domain" ]; then
+                            echo "hysteria2 链接如下："
+                            echo -e "\e[34mhysteria2://$(urlencode "$h2_pass")@$ip:$h2_port?sni=$h2_domain&insecure=0#hysteria2\e[0m"
+                        fi
+                    fi
+                fi
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
