@@ -1203,8 +1203,9 @@ EOF
                 vless_port=$(grep -Pzo '(?s)"tag": "reality".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
                 server_ip=$(curl -s icanhazip.com)
                 vless_sni=$(grep -Pzo '(?s)"tag": "reality".*?server_name":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
+                vless_pbk=${PUBLIC_KEY}
                 vless_sid=$(grep -Pzo '(?s)"tag": "reality".*?short_id":\s*\[\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vless_link="vless://$vless_uuid@$server_ip:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&sid=$vless_sid&type=tcp&headerType=none#reality"
+                vless_link="vless://$vless_uuid@$server_ip:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$vless_pbk&sid=$vless_sid&type=tcp&headerType=none#reality"
                 get_domain_from_cert() {
                     local cert_file=$1
                     openssl x509 -in "$cert_file" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
