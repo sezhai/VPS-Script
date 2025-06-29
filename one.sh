@@ -1123,9 +1123,7 @@ install_sing-box() {
                 export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
                 export PUBLIC_KEY=$(echo "$keys" | awk '/PublicKey/  {print $2}')
                 echo "以下是私钥："
-                echo -e "\e[34m$PRIVATE_KEY\e[0m"
-                echo "以下是公钥："
-                echo -e "\e[34m$PUBLIC_KEY\e[0m"                
+                echo -e "\e[34m$PRIVATE_KEY\e[0m"             
                 echo "以下是ShortIds："                
                 echo -e "\e[34m$(sing-box generate rand 8 --hex)\e[0m"                   
                else
