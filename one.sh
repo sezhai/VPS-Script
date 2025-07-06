@@ -1157,13 +1157,29 @@ install_sing-box() {
                 else
                     echo -e "\e[32msing-box已启动！\e[0m"
                 fi
-
                 get_ip() {
-                    curl -s -4 https://api.ipify.org 2>/dev/null ||
-                    curl -s -4 https://icanhazip.com 2>/dev/null | tr -d '\n' ||
-                    curl -s -6 https://api6.ipify.org 2>/dev/null ||
+                    local ipv4=$(curl -s -4 --connect-timeout 5 https://api.ipify.org 2>/dev/null)
+                    if [ -n "$ipv4" ] && [[ "$ipv4" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                        echo "$ipv4"
+                        return 0
+                    fi
+                    ipv4=$(curl -s -4 --connect-timeout 5 https://icanhazip.com 2>/dev/null | tr -d '\n')
+                    if [ -n "$ipv4" ] && [[ "$ipv4" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                        echo "$ipv4"
+                        return 0
+                    fi
+                    local ipv6=$(curl -s -6 --connect-timeout 5 https://api6.ipify.org 2>/dev/null)
+                    if [ -n "$ipv6" ] && [[ "$ipv6" =~ ^[0-9a-fA-F:]+$ ]]; then
+                        echo "$ipv6"
+                        return 0
+                    fi
+                    ipv6=$(curl -s -6 --connect-timeout 5 https://icanhazip.com 2>/dev/null | tr -d '\n')
+                    if [ -n "$ipv6" ] && [[ "$ipv6" =~ ^[0-9a-fA-F:]+$ ]]; then
+                        echo "$ipv6"
+                        return 0
+                    fi
                     echo "127.0.0.1"
-                }
+                }               
                 urlencode() {
                     local s="$1" ch
                     for ((i=0; i<${#s}; i++)); do
@@ -1173,12 +1189,21 @@ install_sing-box() {
                             *) printf '%%%02X' "'$ch" ;;
                         esac
                     done
-                }
+                }                
                 get_domain_from_cert() {
                     openssl x509 -in "$1" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
                     openssl x509 -in "$1" -text -noout | grep -Po "CN=[^ ]*" | sed 's/CN=//'
                 }
                 ip=$(get_ip)
+                is_ipv6=false
+                if [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]] && [[ "$ip" != "127.0.0.1" ]]; then
+                    is_ipv6=true
+                fi
+                if [ "$is_ipv6" = true ]; then
+                    ip_for_url="[$ip]"
+                else
+                    ip_for_url="$ip"
+                fi               
                 if grep -q '"tag":\s*"vmess"' "$CONFIG_PATH"; then
                     vmess_uuid=$(grep -A 20 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"uuid":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
                     vmess_port=$(grep -A 5 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
@@ -1189,18 +1214,18 @@ install_sing-box() {
                         echo "vmess 链接如下："
                         echo -e "\e[34mvmess://$(echo -n "$vmess_json" | base64 -w0)\e[0m"
                     fi
-                fi
+                fi                
                 if grep -q '"tag":\s*"reality"' "$CONFIG_PATH"; then
                     vless_uuid=$(grep -A 20 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"uuid":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
                     vless_port=$(grep -A 5 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
                     vless_sni=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"server_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
                     vless_sid=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH" | sed -n '/"short_id"/,/]/p' | grep -o '"[a-fA-F0-9]*"' | head -1 | tr -d '"')
                     if [ -n "$vless_uuid" ] && [ -n "$vless_port" ]; then
-                        vless_link="vless://$vless_uuid@$ip:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$PUBLIC_KEY&sid=$vless_sid&type=tcp&headerType=none#reality"
+                        vless_link="vless://$vless_uuid@$ip_for_url:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$PUBLIC_KEY&sid=$vless_sid&type=tcp&headerType=none#reality"
                         echo "reality 链接如下："
                         echo -e "\e[34m$vless_link\e[0m"
                     fi
-                fi
+                fi               
                 if grep -q '"tag":\s*"hysteria2"' "$CONFIG_PATH"; then
                     h2_pass=$(grep -A 20 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"password":\s*"[^"]*"' | cut -d'"' -f4)
                     h2_port=$(grep -A 5 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
@@ -1209,10 +1234,11 @@ install_sing-box() {
                         h2_domain=$(get_domain_from_cert "$cert_path")
                         if [ -n "$h2_domain" ]; then
                             echo "hysteria2 链接如下："
-                            echo -e "\e[34mhysteria2://$(urlencode "$h2_pass")@$ip:$h2_port?sni=$h2_domain&insecure=0#hysteria2\e[0m"
+                            echo -e "\e[34mhysteria2://$(urlencode "$h2_pass")@$ip_for_url:$h2_port?sni=$h2_domain&insecure=0#hysteria2\e[0m"
                         fi
                     fi
                 fi
+                
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
