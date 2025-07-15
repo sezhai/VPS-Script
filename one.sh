@@ -1010,9 +1010,23 @@ install_hysteria2() {
                     openssl x509 -in "$cert_file" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
                     openssl x509 -in "$cert_file" -text -noout | grep -Po "CN=[^ ]*" | sed 's/CN=//'
                 }
+                get_ip_address() {
+                    local ip=""
+                    ip=$(curl -4 -s --connect-timeout 5 https://ifconfig.me 2>/dev/null)
+                    if [[ -n "$ip" && "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                        echo "$ip"
+                        return 0
+                    fi
+                    ip=$(curl -6 -s --connect-timeout 5 https://ifconfig.me 2>/dev/null)
+                    if [[ -n "$ip" && "$ip" =~ ^[0-9a-fA-F:]+$ ]]; then
+                        echo "[$ip]"  # IPv6地址需要用方括号包围
+                        return 0
+                    fi    
+                    return 1
+                }
                 if [ ! -f "$config_file" ]; then
                     echo -e "\e[31m未能找到配置文件。\e[0m"
-                    break
+                    exit 1
                 fi
                 while true; do
                     sudo systemctl restart hysteria-server.service
@@ -1023,10 +1037,10 @@ install_hysteria2() {
                         break
                     else
                         echo -e "\e[32mhysteria已启动！\e[0m"
-                    fi
+                    fi    
                     port=$(grep "^listen:" "$config_file" | awk -F: '{print $3}' || echo "443")
                     password=$(grep "^  password:" "$config_file" | awk '{print $2}')
-                    domain=$(grep "domains:" "$config_file" -A 1 | tail -n 1 | tr -d " -")
+                    domain=$(grep "domains:" "$config_file" -A 1 | tail -n 1 | tr -d " -")    
                     if [ -z "$domain" ]; then
                         cert_path=$(grep "cert:" "$config_file" | awk '{print $2}' | tr -d '"')
                         if [ -z "$cert_path" ] || [ ! -f "$cert_path" ]; then
@@ -1039,7 +1053,11 @@ install_hysteria2() {
                             break
                         fi
                     fi
-                    ip=$(curl -s https://ifconfig.me)
+                    ip=$(get_ip_address)    
+                    if [ -z "$ip" ]; then
+                        echo -e "\e[31m无法获取IP地址，请检查网络连接。\e[0m"
+                        break
+                    fi    
                     hysteria2_uri="hysteria2://$password@$ip:$port?sni=$domain&insecure=0#hysteria"
                     echo "hysteria2 链接如下："
                     echo -e "\e[34m$hysteria2_uri\e[0m"
