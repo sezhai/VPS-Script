@@ -16,14 +16,14 @@
 ## 直接使用命令
 
 ```Bash
-bash <(curl -sL https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh)
+bash -c 'URL=https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh; DEST=/usr/local/sbin/one; if command -v curl >/dev/null 2>&1; then DOWN="curl -fsSL $URL -o $DEST"; elif command -v wget >/dev/null 2>&1; then DOWN="wget -q $URL -O $DEST"; else echo "未安装 curl 或 wget，尝试安装 curl..." >&2; sudo apt update && sudo apt install -y curl; DOWN="curl -fsSL $URL -o $DEST"; fi; eval $DOWN && chmod +x $DEST && $DEST'
 ```
 
 ## 下载使用命令
 
 ### 下载
 ```Bash
-bash -c 'curl -sL https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh -o /usr/local/sbin/one && chmod +x /usr/local/sbin/one && /usr/local/sbin/one'
+bash -c 'if command -v curl >/dev/null 2>&1; then curl -fsSL https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh -o /usr/local/sbin/one; elif command -v wget >/dev/null 2>&1; then wget -q https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh -O /usr/local/sbin/one; else echo "未安装 curl 或 wget，尝试安装 curl..." >&2; sudo apt update && sudo apt install -y curl && curl -fsSL https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh -o /usr/local/sbin/one; fi && chmod +x /usr/local/sbin/one && /usr/local/sbin/one'
 ```
 ### 运行
 ```Bash
