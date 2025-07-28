@@ -979,12 +979,12 @@ install_hysteria2() {
         case "$hysteria_choice" in
             1)
                 if bash <(curl -fsSL https://get.hy2.sh/) && \
-                   sudo systemctl enable --now hysteria-server.service && \
-                   sysctl -w net.core.rmem_max=16777216 && \
-                   sysctl -w net.core.wmem_max=16777216; then
-                echo -e "\e[32mhysteria2 安装升级完成！\e[0m"
+                sudo systemctl enable --now hysteria-server.service; then
+                    sysctl -w net.core.rmem_max=16777216 || true
+                    sysctl -w net.core.wmem_max=16777216 || true
+                    echo -e "\e[32mhysteria2 安装升级完成！\e[0m"
                 else
-                echo -e "\e[31mhysteria2 安装升级失败！\e[0m"
+                    echo -e "\e[31mhysteria2 安装升级失败！\e[0m"
                 fi
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
