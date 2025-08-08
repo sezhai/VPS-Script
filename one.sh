@@ -1045,18 +1045,15 @@ install_hysteria2() {
                         cert_path=$(grep "cert:" "$config_file" | awk '{print $2}' | tr -d '"')
                         if [ -z "$cert_path" ] || [ ! -f "$cert_path" ]; then
                             echo -e "\e[31m没有找到域名或证书。\e[0m"
-                            break
                         fi
                         domain=$(get_domain_from_cert "$cert_path")
                         if [ -z "$domain" ]; then
                             echo -e "\e[31m从证书中提取域名失败。\e[0m"
-                            break
                         fi
                     fi
                     ip=$(get_ip_address)    
                     if [ -z "$ip" ]; then
                         echo -e "\e[31m无法获取IP地址，请检查网络连接。\e[0m"
-                        break
                     fi    
                     hysteria2_uri="hysteria2://$password@$ip:$port?sni=$domain&insecure=0#hysteria"
                     echo "hysteria2 链接如下："
