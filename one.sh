@@ -676,8 +676,8 @@ apply_certificate() {
                 install_path=${install_path:-/path/to}
                 if mkdir -p "$install_path" && \
                     ~/.acme.sh/acme.sh --installcert -d "$domain" \
-                    --key-file "$install_path/private.key" --fullchain-file "$install_path/fullchain.crt" && \
-                    sudo chmod 644 "$install_path/fullchain.crt" "$install_path/private.key"; then
+                    --key-file "$install_path/key.key" --fullchain-file "$install_path/certificate.crt" && \
+                    sudo chmod 644 "$install_path/certificate.crt" "$install_path/key.key"; then
                    echo -e "\e[32m证书安装完成！路径: $install_path\e[0m"
                    else
                    echo -e "\e[31m证书安装失败，请检查输入。\e[0m"
@@ -710,7 +710,7 @@ install_xray() {
         echo "========================================="
     echo -e "               \e[1;32m安装Xray\e[0m       "
         echo "========================================="
-        echo "1) VLESS-WS-TLS"
+        echo "1) VMESS-WS-TLS"
         echo "2) VLESS-TCP-REALITY"
         echo "3) 卸载服务"
         echo "========================================="
@@ -738,11 +738,11 @@ install_xray() {
     done
 }
 
-# 安装VLESS-WS-TLS
+# 安装VMESS-WS-TLS
 install_xray_tls() {
     while true; do
         echo "========================================="
-        echo -e "               \e[1;34mVLESS-WS-TLS\e[0m   "
+        echo -e "               \e[1;34mVMESS-WS-TLS\e[0m   "
         echo "========================================="
         echo "1) 安装升级"
         echo "2) 编辑配置"
@@ -752,7 +752,7 @@ install_xray_tls() {
         case "$xray_choice" in
             1)
                if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
-                   sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-TLS-WS%20(recommended)/config_server.jsonc"; then
+                   sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VMess-Websocket-TLS/config_server.jsonc"; then
                 echo -e "\e[32mXray 安装升级完成！\e[0m"
                 echo "以下是uuid："
                 echo -e "\e[34m$(xray uuid)\e[0m"
@@ -827,9 +827,9 @@ install_xray_tls() {
                 WS_PATH=${WS_PATH:-"/"}
                 TLS=${TLS:-"tls"}
                 PORT=${PORT:-"443"}
-                vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&security=${TLS}&sni=${SNI}&type=ws&host=${HOST}&path=${WS_PATH}#Xray"
+                vmess_uri="vmess://${UUID}@${ADDRESS}:${PORT}?encryption=none&security=${TLS}&sni=${SNI}&type=ws&host=${HOST}&path=${WS_PATH}#Xray"
                 echo "VLESS链接如下"
-                echo -e "\e[34m$vless_uri\e[0m"
+                echo -e "\e[34m$vmess_uri\e[0m"
                 break
                 done
                 read -n 1 -s -r -p "按任意键返回..."
