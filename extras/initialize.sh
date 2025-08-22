@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 系统清理脚本
+# 系统清理脚本 - 精简版
 # 适用于 Debian/Ubuntu 系统
 # 警告：此脚本会直接删除文件，无备份功能！
 
@@ -81,12 +81,12 @@ cleanup_apt() {
     
     # 获取基础包列表
     if command -v ubuntu-minimal &> /dev/null; then
-        BASE_PACKAGES="ubuntu-minimal ubuntu-standard"
+        BASE_PACKAGES="ubuntu-minimal ubuntu-standard sudo openssh-server openssh-client systemd-resolved netplan.io"
     else
-        BASE_PACKAGES="base-files base-passwd bash coreutils apt"
+        BASE_PACKAGES="base-files base-passwd bash coreutils apt sudo openssh-server openssh-client systemd-resolved"
     fi
     
-    # 常见后装软件包列表
+    # 常见后装软件包列表（排除关键系统组件）
     REMOVE_PACKAGES=(
         "htop"
         "tree" 
@@ -134,9 +134,38 @@ cleanup_apt() {
         "g++"
     )
     
-    # 尝试删除这些包
+    # 保护关键系统包（不删除）
+    PROTECTED_PACKAGES=(
+        "sudo"
+        "openssh-server"
+        "openssh-client"
+        "systemd"
+        "systemd-resolved"
+        "networkd-dispatcher"
+        "network-manager"
+        "netplan.io"
+        "resolvconf"
+        "libc6"
+        "init"
+        "kernel"
+        "linux-image"
+        "linux-headers"
+        "grub"
+        "systemd-timesyncd"
+    )
+    
+    # 尝试删除这些包（但保护关键包）
     for pkg in "${REMOVE_PACKAGES[@]}"; do
-        if dpkg -l | grep -q "^ii.*$pkg"; then
+        # 检查是否为保护包
+        is_protected=false
+        for protected in "${PROTECTED_PACKAGES[@]}"; do
+            if [[ "$pkg" == *"$protected"* ]]; then
+                is_protected=true
+                break
+            fi
+        done
+        
+        if [[ "$is_protected" == false ]] && dpkg -l | grep -q "^ii.*$pkg"; then
             log_info "移除包: $pkg"
             apt remove --purge -y "$pkg" 2>/dev/null || true
         fi
@@ -507,7 +536,7 @@ update_system() {
 # 主函数
 main() {
     echo "=================================="
-    echo "    系统清理脚本    "
+    echo "    系统清理脚本        "
     echo "=================================="
     echo
     
