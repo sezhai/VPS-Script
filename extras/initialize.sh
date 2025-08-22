@@ -38,7 +38,9 @@ confirm_operation() {
     echo "  - 删除自定义systemd服务"
     echo "  - 删除用户本地安装的程序"
     echo
-    read -p "确定继续？(输入 'YES' 确认): " confirmation
+    read -p "确定继续？(输入 'yes' 或 'YES' 确认): " confirmation
+    # 转换为大写进行比较
+    confirmation=$(echo "$confirmation" | tr '[:lower:]' '[:upper:]')
     if [[ "$confirmation" != "YES" ]]; then
         log_info "操作已取消"
         exit 0
