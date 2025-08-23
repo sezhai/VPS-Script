@@ -36,31 +36,43 @@ systemctl daemon-reload
 # 清理常见后装应用
 log "清理后装应用..."
 APPS=(
-    "xray:/usr/local/bin/xray:/etc/xray:/usr/local/etc/xray"
-    "v2ray:/usr/local/bin/v2ray:/etc/v2ray:/usr/local/etc/v2ray"
-    "sing-box:/usr/local/bin/sing-box:/etc/sing-box"
-    "hysteria:/usr/local/bin/hysteria:/etc/hysteria"
-    "hysteria2:/usr/local/bin/hysteria2:/etc/hysteria2"
-    "hy2:/usr/local/bin/hy2"
-    "clash:/usr/local/bin/clash:/etc/clash"
-    "1panel:/usr/local/bin/1panel:/opt/1panel:/etc/1panel"
-    "nezha-agent:/opt/nezha"
+    "xray:/usr/local/bin/xray:/etc/xray:/usr/local/etc/xray:/var/log/xray"
+    "v2ray:/usr/local/bin/v2ray:/etc/v2ray:/usr/local/etc/v2ray:/var/log/v2ray"
+    "sing-box:/usr/local/bin/sing-box:/etc/sing-box:/usr/local/etc/sing-box:/var/log/sing-box"
+    "hysteria:/usr/local/bin/hysteria:/etc/hysteria:/var/log/hysteria"
+    "hysteria2:/usr/local/bin/hysteria2:/etc/hysteria2:/var/log/hysteria2"
+    "hy2:/usr/local/bin/hy2:/etc/hy2"
+    "clash:/usr/local/bin/clash:/etc/clash:/usr/local/etc/clash"
+    "clash-meta:/usr/local/bin/clash-meta"
+    "1panel:/usr/local/bin/1panel:/opt/1panel:/etc/1panel:/var/lib/1panel"
+    "nezha-agent:/opt/nezha:/etc/nezha"
     "nezha-dashboard:/opt/nezha"
-    "trojan:/usr/local/bin/trojan"
-    "caddy:/usr/bin/caddy:/etc/caddy"
+    "trojan:/usr/local/bin/trojan:/etc/trojan"
+    "trojan-go:/usr/local/bin/trojan-go"
+    "caddy:/usr/bin/caddy:/etc/caddy:/var/lib/caddy"
+    "nginx:/usr/local/nginx:/var/log/nginx"
     "frps:/opt/frp:/etc/frp"
     "frpc:/opt/frp:/etc/frp"
+    "docker:/var/lib/docker:/etc/docker"
+    "containerd:/var/lib/containerd:/etc/containerd"
+    "portainer:/var/lib/portainer:/opt/portainer"
+    "qinglong:/opt/ql"
+    "aria2:/etc/aria2"
+    "filebrowser:/opt/filebrowser"
+    "rclone:/usr/local/bin/rclone"
+    "bt:/www/server/panel:/www/server/bt-tasks"
+    "aapanel:/www/server/panel"
 )
 
 for app_info in "${APPS[@]}"; do
     IFS=':' read -ra PARTS <<< "$app_info"
     app_name="${PARTS[0]}"
     
-    # 停止服务
-    for service_name in "$app_name" "${app_name}s" "${app_name}-agent" "${app_name}-dashboard"; do
+    # 停止相关服务（支持多种服务名格式）
+    for service_name in "$app_name" "${app_name}s" "${app_name}-agent" "${app_name}-dashboard" "${app_name}d" "${app_name}.service"; do
         systemctl stop "$service_name" 2>/dev/null || true
         systemctl disable "$service_name" 2>/dev/null || true
-        rm -f "/etc/systemd/system/${service_name}.service"
+        rm -f "/etc/systemd/system/${service_name}" "/etc/systemd/system/${service_name}.service"
     done
     
     # 删除文件和目录
@@ -72,8 +84,10 @@ for app_info in "${APPS[@]}"; do
     pkill -f "$app_name" 2>/dev/null || true
 done
 
-# 清理面板数据
-rm -rf /www/server/{panel,bt-tasks} /var/lib/{docker,containerd,portainer} 2>/dev/null || true
+# 清理面板数据和容器数据
+log "清理数据目录..."
+rm -rf /www/server/{panel,bt-tasks} /var/lib/{docker,containerd,portainer,snapd,flatpak} 2>/dev/null || true
+rm -rf /snap /var/snap 2>/dev/null || true
 
 # 清理安装目录
 log "清理安装目录..."
@@ -100,9 +114,10 @@ apt update -qq
 # 保护关键包
 PROTECTED="sudo|openssh|systemd|network|netplan|kernel|linux-|grub|libc6|init|base-"
 REMOVE_PKGS=(htop tree nano vim neovim tmux screen git curl wget rsync p7zip-full unrar 
-             ffmpeg nodejs npm python3-pip docker.io docker-ce containerd.io nginx apache2 
-             mysql-server mariadb-server postgresql redis-server php zsh fish neofetch 
-             btop nload iftop glances speedtest-cli build-essential make cmake gcc g++)
+             ffmpeg nodejs npm python3-pip docker.io docker-ce docker-compose containerd.io 
+             nginx apache2 mysql-server mariadb-server postgresql redis-server mongodb
+             php php-fpm zsh fish neofetch btop nload iftop glances speedtest-cli 
+             build-essential make cmake gcc g++ snap snapd flatpak)
 
 for pkg in "${REMOVE_PKGS[@]}"; do
     [[ "$pkg" =~ $PROTECTED ]] && continue
