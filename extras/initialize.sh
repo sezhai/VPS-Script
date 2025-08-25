@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 系统清理脚本
+# 系统清理脚本 - 优化精简版
 # 适用于 Debian/Ubuntu 系统
 
 set -e
@@ -140,8 +140,8 @@ apt update -qq 2>/dev/null || {
     apt update -qq
 }
 
-# 保护关键包（包含python和dpkg相关）
-PROTECTED="sudo|openssh|systemd|network|netplan|kernel|linux-|grub|libc6|init|base-|python3|dpkg|apt|debconf|cloud-init|ubuntu-server|ssh-import-id"
+# 保护关键包（强化网络组件保护）
+PROTECTED="sudo|openssh|systemd-networkd|systemd-resolved|systemd|network|netplan|networkd-dispatcher|network-manager|kernel|linux-|grub|libc6|init|base-|python3|dpkg|apt|debconf|cloud-init|ubuntu-server|ssh-import-id|ifupdown|isc-dhcp|resolvconf|dns"
 REMOVE_PKGS=(htop tree nano vim neovim tmux screen git curl wget rsync p7zip-full unrar 
              ffmpeg nodejs npm python3-pip docker.io docker-ce docker-compose containerd.io 
              nginx apache2 mysql-server mariadb-server postgresql redis-server mongodb
@@ -160,13 +160,22 @@ for pkg in "${REMOVE_PKGS[@]}"; do
     fi
 done
 
-# 设置基础包
+# 设置基础包（强化网络组件）
 if command -v ubuntu-minimal >/dev/null 2>&1; then
     BASE="ubuntu-minimal ubuntu-standard"
 else
     BASE="base-files base-passwd bash coreutils apt"
 fi
-BASE="$BASE sudo openssh-server systemd-resolved netplan.io"
+BASE="$BASE sudo openssh-server systemd-resolved systemd-networkd netplan.io network-manager networkd-dispatcher"
+
+# 确保网络服务正常
+log "检查网络服务..."
+for service in systemd-networkd systemd-resolved; do
+    if ! systemctl is-active "$service" >/dev/null 2>&1; then
+        log "重启网络服务: $service"
+        systemctl restart "$service" 2>/dev/null || true
+    fi
+done
 
 # 标记包并清理
 dpkg --get-selections | awk '/install$/{print $1}' | xargs apt-mark auto 2>/dev/null || true
