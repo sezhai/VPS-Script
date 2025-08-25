@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 系统清理脚本 - 优化精简版
+# 系统清理脚本
 # 适用于 Debian/Ubuntu 系统
 
 set -e
@@ -35,7 +35,7 @@ systemctl daemon-reload
 
 # 清理常见后装应用
 log "清理后装应用..."
-APPS=(
+APPS=( 
     "xray:/usr/local/bin/xray:/etc/xray:/usr/local/etc/xray:/var/log/xray"
     "v2ray:/usr/local/bin/v2ray:/etc/v2ray:/usr/local/etc/v2ray:/var/log/v2ray"
     "sing-box:/usr/local/bin/sing-box:/etc/sing-box:/usr/local/etc/sing-box:/var/log/sing-box"
@@ -64,6 +64,7 @@ APPS=(
     "aapanel:/www/server/panel"
 )
 
+# 清理后装应用
 for app_info in "${APPS[@]}"; do
     IFS=':' read -ra PARTS <<< "$app_info"
     app_name="${PARTS[0]}"
