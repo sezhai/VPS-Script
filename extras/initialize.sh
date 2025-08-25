@@ -109,21 +109,55 @@ done
 
 # 重置APT包
 log "重置APT包..."
-apt update -qq
 
-# 保护关键包
-PROTECTED="sudo|openssh|systemd|network|netplan|kernel|linux-|grub|libc6|init|base-"
+# 预先修复dpkg问题
+log "检查并修复dpkg状态..."
+if ! dpkg --audit >/dev/null 2>&1; then
+    log "修复损坏的dpkg包..."
+    
+    # 修复常见的损坏包
+    BROKEN_PACKAGES=("cloud-init" "ssh-import-id")
+    for pkg in "${BROKEN_PACKAGES[@]}"; do
+        if dpkg -l "$pkg" 2>/dev/null | grep -q "^.i"; then
+            log "修复损坏的包: $pkg"
+            # 创建临时脚本绕过错误
+            for script in /var/lib/dpkg/info/${pkg}.{prerm,postinst,postrm}; do
+                if [[ -f "$script" ]] && ! bash -n "$script" 2>/dev/null; then
+                    echo -e "#!/bin/bash\nexit 0" > "$script"
+                    chmod +x "$script"
+                fi
+            done
+        fi
+    done
+    
+    # 尝试配置
+    dpkg --configure -a --force-confold 2>/dev/null || true
+fi
+
+apt update -qq 2>/dev/null || {
+    log "apt update失败，尝试修复..."
+    apt install --reinstall apt -y 2>/dev/null || true
+    apt update -qq
+}
+
+# 保护关键包（包含python和dpkg相关）
+PROTECTED="sudo|openssh|systemd|network|netplan|kernel|linux-|grub|libc6|init|base-|python3|dpkg|apt|debconf|cloud-init|ubuntu-server|ssh-import-id"
 REMOVE_PKGS=(htop tree nano vim neovim tmux screen git curl wget rsync p7zip-full unrar 
              ffmpeg nodejs npm python3-pip docker.io docker-ce docker-compose containerd.io 
              nginx apache2 mysql-server mariadb-server postgresql redis-server mongodb
              php php-fpm zsh fish neofetch btop nload iftop glances speedtest-cli 
              build-essential make cmake gcc g++ snap snapd flatpak)
 
+# 安全删除包
 for pkg in "${REMOVE_PKGS[@]}"; do
     [[ "$pkg" =~ $PROTECTED ]] && continue
-    dpkg -l 2>/dev/null | grep -q "^ii.*$pkg" && {
-        apt remove --purge -y "$pkg" -qq 2>/dev/null || true
-    }
+    if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
+        log "尝试移除包: $pkg"
+        if ! apt remove --purge -y "$pkg" -qq 2>/dev/null; then
+            log "包 $pkg 删除失败，跳过"
+            continue
+        fi
+    fi
 done
 
 # 设置基础包
