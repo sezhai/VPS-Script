@@ -64,7 +64,6 @@ APPS=(
     "aapanel:/www/server/panel"
 )
 
-# 清理后装应用
 for app_info in "${APPS[@]}"; do
     IFS=':' read -ra PARTS <<< "$app_info"
     app_name="${PARTS[0]}"
@@ -141,8 +140,8 @@ apt update -qq 2>/dev/null || {
     apt update -qq
 }
 
-# 保护关键包（强化网络组件保护）
-PROTECTED="sudo|openssh|systemd-networkd|systemd-resolved|systemd|network|netplan|networkd-dispatcher|network-manager|kernel|linux-|grub|libc6|init|base-|python3|dpkg|apt|debconf|cloud-init|ubuntu-server|ssh-import-id|ifupdown|isc-dhcp|resolvconf|dns"
+# 保护关键包（强化网络和bash组件保护）
+PROTECTED="sudo|openssh|systemd-networkd|systemd-resolved|systemd|network|netplan|networkd-dispatcher|network-manager|kernel|linux-|grub|libc6|init|base-|python3|dpkg|apt|debconf|cloud-init|ubuntu-server|ssh-import-id|ifupdown|isc-dhcp|resolvconf|dns|bash|command-not-found|update-notifier|ubuntu-release-upgrader"
 REMOVE_PKGS=(htop tree nano vim neovim tmux screen git curl wget rsync p7zip-full unrar 
              ffmpeg nodejs npm python3-pip docker.io docker-ce docker-compose containerd.io 
              nginx apache2 mysql-server mariadb-server postgresql redis-server mongodb
@@ -161,13 +160,13 @@ for pkg in "${REMOVE_PKGS[@]}"; do
     fi
 done
 
-# 设置基础包（强化网络组件）
+# 设置基础包（强化网络和shell组件）
 if command -v ubuntu-minimal >/dev/null 2>&1; then
     BASE="ubuntu-minimal ubuntu-standard"
 else
     BASE="base-files base-passwd bash coreutils apt"
 fi
-BASE="$BASE sudo openssh-server systemd-resolved systemd-networkd netplan.io network-manager networkd-dispatcher"
+BASE="$BASE sudo openssh-server systemd-resolved systemd-networkd netplan.io network-manager networkd-dispatcher command-not-found bash-completion"
 
 # 确保网络服务正常
 log "检查网络服务..."
