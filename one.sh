@@ -208,8 +208,9 @@ common_tools() {
         echo "5) 关闭进程"
         echo "6) 查看端口"
         echo "7) 开放端口"
+        echo "8) 网络测速"
         echo "========================================="
-        read -p "请输入数字 [1-7] 选择 (默认回车退出)：" root_choice
+        read -p "请输入数字 [1-8] 选择 (默认回车退出)：" root_choice
         case "$root_choice" in
             1)
                 read -p "请输入要查找的文件名: " filename
@@ -376,6 +377,19 @@ common_tools() {
                 done
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
+                ;;
+            8)
+                if ! command -v speedtest-cli >/dev/null 2>&1; then
+                    echo "未检测到 speedtest-cli，正在安装..."
+                    sudo apt update
+                    sudo apt install -y speedtest-cli
+                else
+                    echo "已安装 speedtest-cli，直接测速..."
+                fi
+                echo "开始测速..."
+                speedtest-cli
+                read -n 1 -s -r -p "按任意键返回..."
+                echo                
                 ;;
             "") 
                 return
