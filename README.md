@@ -16,14 +16,14 @@
 ## 直接使用命令
 
 ```Bash
-bash -c 'URL=https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh; if command -v curl >/dev/null 2>&1; then bash <(curl -fsSL $URL); else echo "未安装 curl，尝试安装中..." >&2; sudo apt update && sudo apt install -y curl && bash <(curl -fsSL $URL); fi'
+bash -c 'URL=https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh; command -v curl >/dev/null 2>&1 || (sudo apt update && sudo apt install -y curl); bash <(curl -fsSL $URL)'
 ```
 
 ## 下载使用命令
 
 ### 下载
 ```Bash
-bash -c 'URL=https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh; DEST=/usr/local/sbin/one; if command -v curl >/dev/null 2>&1; then curl -fsSL $URL -o $DEST; else echo "未安装 curl，尝试安装中..." >&2; sudo apt update && sudo apt install -y curl; curl -fsSL $URL -o $DEST; fi; chmod +x $DEST && $DEST'
+bash -c 'URL=https://raw.githubusercontent.com/sezhai/vps-script/refs/heads/main/one.sh; DEST=/usr/local/sbin/one; command -v curl >/dev/null 2>&1 || (sudo apt update && sudo apt install -y curl); curl -fsSL $URL -o $DEST && chmod +x $DEST && $DEST'
 ```
 ### 运行
 ```Bash
