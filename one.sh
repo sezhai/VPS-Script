@@ -85,14 +85,16 @@ display_system_optimization_menu() {
         echo "3) 清理系统"
         echo "4) 开启BBR"
         echo "5) ROOT登录"
+        echo "6) 系统初始化"
         echo "========================================="
-        read -p "请输入数字 [1-5] 选择 (默认回车退出)：" root_choice
+        read -p "请输入数字 [1-6] 选择 (默认回车退出)：" root_choice
         case "$root_choice" in
             1) calibrate_time ;;
             2) update_system ;;
             3) clean_system ;;
             4) enable_bbr ;;
             5) root_login ;;
+            6) user_sysinit ;;
             "") 
                 return
                 ;;            
@@ -195,6 +197,94 @@ root_login() {
     done
 }
 
+# 系统初始化
+user_sysinit() {
+        set -e
+        read -p "$(echo -e '\033[0;31m输入y继续（默认回车退出）:\033[0m ') " confirm
+        [[ "$confirm" != "y" ]] && return 0
+        echo "开始系统清理..."
+        echo -e "\033[0;34m[INFO]\033[0m 清理后装应用文件..."
+            local CLEANUP_PATHS=(
+                "/usr/local/bin/xray" "/usr/local/bin/v2ray" "/usr/local/bin/v2ctl"
+                "/usr/local/bin/sing-box" "/usr/local/bin/hysteria" "/usr/local/bin/hysteria2"
+                "/usr/local/bin/hy2" "/usr/local/bin/clash" "/usr/local/bin/clash-meta"
+                "/usr/local/bin/trojan" "/usr/local/bin/trojan-go" "/usr/local/bin/tuic"
+                "/usr/bin/caddy"
+                "/usr/local/bin/1panel" "/opt/1panel" "/opt/nezha" "/opt/ql"
+                "/opt/portainer" "/opt/filebrowser" "/opt/frp"
+                "/www/server/panel" "/www/server/bt-tasks"
+                "/etc/aria2" "/etc/xray" "/etc/v2ray" "/etc/sing-box" "/etc/hysteria"
+                "/etc/hysteria2" "/etc/clash" "/etc/trojan" "/etc/caddy" "/etc/frp"
+                "/etc/1panel" "/etc/nezha" "/usr/local/etc/xray" "/usr/local/etc/v2ray"
+                "/usr/local/etc/sing-box" "/usr/local/etc/clash"
+                "/var/lib/1panel" "/var/log/xray" "/var/log/v2ray" "/var/log/sing-box"
+                "/var/log/hysteria" "/var/log/nginx"
+        )
+        for path in "${CLEANUP_PATHS[@]}"; do
+            if [[ -e "$path" ]]; then
+                rm -rf "$path" 2>/dev/null && echo -e "\033[0;34m[INFO]\033[0m 删除: $path"
+            fi
+        done
+        echo -e "\033[0;34m[INFO]\033[0m 清理后装systemd服务..."
+        local CLEANUP_SERVICES=(
+            "xray" "v2ray" "sing-box" "hysteria" "hysteria2" "hy2"
+            "clash" "trojan" "caddy" "frps" "frpc" "1panel"
+            "nezha-agent" "nezha-dashboard" "aria2" "filebrowser"
+            "portainer" "docker" "containerd"
+        )
+        for service in "${CLEANUP_SERVICES[@]}"; do
+            systemctl stop "$service" 2>/dev/null || true
+            systemctl disable "$service" 2>/dev/null || true
+            rm -f "/etc/systemd/system/${service}.service"
+            rm -f "/etc/systemd/system/${service}d.service"
+            rm -f "/etc/systemd/system/${service}-agent.service"
+            rm -f "/etc/systemd/system/${service}-dashboard.service"
+        done
+        systemctl daemon-reload 2>/dev/null || true
+        echo -e "\033[0;34m[INFO]\033[0m 终止后装应用进程..."
+        local KILL_PATTERNS=(
+            "xray" "v2ray" "sing-box" "hysteria" "clash" "trojan"
+            "caddy" "frps" "frpc" "1panel" "nezha" "aria2"
+            "filebrowser" "portainer" "docker" "containerd"
+        )
+        for pattern in "${KILL_PATTERNS[@]}"; do
+            pkill -f "$pattern" 2>/dev/null || true
+        done
+        echo -e "\033[0;34m[INFO]\033[0m 删除后装APT包..."
+        local REMOVE_PKGS=("docker.io" "docker-ce" "docker-compose" "containerd.io" "docker-compose-plugin")
+        for pkg in "${REMOVE_PKGS[@]}"; do
+            if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
+                echo -e "\033[0;34m[INFO]\033[0m 删除APT包: $pkg"
+                apt remove --purge -y "$pkg" -qq 2>/dev/null || true
+            fi
+        done
+        echo -e "\033[0;34m[INFO]\033[0m 清理用户目录..."
+        for home in /home/*/; do
+            [[ -d "$home" ]] || continue
+            rm -rf "${home}.config/1panel" "${home}.config/clash" "${home}.config/v2ray" \
+                    "${home}.xray" "${home}.v2ray" 2>/dev/null || true
+        done
+        echo -e "\033[0;34m[INFO]\033[0m 清理缓存..."
+        rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+        apt autoclean apt clean 2>/dev/null || true
+        echo -e "\033[0;34m[INFO]\033[0m 验证系统完整性..."
+        dpkg --configure -a --force-confold 2>/dev/null || true
+        apt update -qq 2>/dev/null || {
+            echo -e "\033[0;34m[INFO]\033[0m 尝试修复APT..."
+            apt install -f -y -qq 2>/dev/null || true
+            apt update -qq 2>/dev/null || true
+        }
+        for service in systemd-resolved systemd-networkd networking; do
+            systemctl is-enabled "$service" >/dev/null 2>&1 && \
+                systemctl restart "$service" 2>/dev/null || true
+        done
+        echo -e "\e[32m系统初始化完成！\e[0m"
+        read -p "$(echo -e '\033[0;31m输入y重启系统（默认回车退出）:\033[0m ') " reboot_choice
+        [[ "$reboot_choice" == "y" ]] && sudo reboot
+        read -n 1 -s -r -p "按任意键返回..."
+        echo
+}
+
 # 常用工具
 common_tools() {
     while true; do
@@ -239,7 +329,6 @@ common_tools() {
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
-            
             3)
                 while true; do
                     read -p "请输入要删除的文件或目录名（默认回车退出）: " filename
