@@ -688,8 +688,10 @@ install_xray_reality() {
           echo -e "\e[32mXray 安装升级完成！\e[0m"
           echo "以下是 UUID："; echo -e "\e[34m$(xray uuid)\e[0m"
           echo "以下是私钥："
-          keys="$(xray x25519)"; export PRIVATE_KEY="$(echo "$keys" | awk 'NR==1{print $3}')" ; export PUBLIC_KEY="$(echo "$keys" | awk 'NR==2{print $3}')"
-          echo -e "\e[34m$PRIVATE_KEY\e[0m"
+                keys=$(xray x25519)
+                export PRIVATE_KEY=$(echo "$keys" | head -n 1 | awk '{print $3}' | sed 's/^-//')
+                export PUBLIC_KEY=$(echo "$keys" | tail -n 1 | awk '{print $3}' | sed 's/^-//')
+                echo -e "\e[34m$PRIVATE_KEY\e[0m"                
           echo "以下是 ShortIds："; echo -e "\e[34m$(openssl rand -hex 8)\e[0m"
         else
           echo -e "\e[31mXray 安装升级失败！\e[0m"
