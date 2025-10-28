@@ -1,4 +1,20 @@
 #!/bin/bash
+# ---------- sudo 兼容层（在 root 且无 sudo 时提供 shim） ----------
+ensure_sudo_shim() {
+  if [ "$(id -u)" -eq 0 ] && ! command -v sudo >/dev/null 2>&1; then
+    _SUDO_DIR="/tmp/.sudo_shim_$$"
+    mkdir -p "$_SUDO_DIR"
+    cat >"$_SUDO_DIR/sudo" <<'EOF'
+#!/bin/sh
+# shim: 在 root 环境中把 sudo 当作空操作
+exec "$@"
+EOF
+    chmod +x "$_SUDO_DIR/sudo"
+    export PATH="$_SUDO_DIR:$PATH"
+  fi
+}
+ensure_sudo_shim
+# -----------------------------------------------------------------
 # ---------- 权限与 $SUDO 探测 ----------
 # 若以 root 运行则不使用 sudo；否则要求系统已安装 sudo。
 if [ "$(id -u)" -ne 0 ]; then
