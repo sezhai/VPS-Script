@@ -2,29 +2,6 @@
 # VPS 管理脚本
 
 # -----------------------------------------------------------------------------
-# 辅助函数
-# -----------------------------------------------------------------------------
-
-# 安全下载到文件：优先 curl，其次 wget；若均不存在，自动 apt 更新并安装 curl（Debian/Ubuntu）
-fetch_to_file() {
-    local url="$1" dest="$2"
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$url" -o "$dest"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -qO "$dest" "$url"
-    else
-        echo "未检测到 curl 或 wget，正在安装 curl..." >&2
-        if command -v apt >/dev/null 2>&1; then
-            sudo apt update -y >/dev/null 2>&1 && sudo apt install -y curl >/dev/null 2>&1
-            curl -fsSL "$url" -o "$dest"
-        else
-            echo "无法自动安装 curl（未发现 apt）。请先手动安装 curl 或 wget。" >&2
-            return 1
-        fi
-    fi
-}
-
-# -----------------------------------------------------------------------------
 # 函数定义
 # -----------------------------------------------------------------------------
 
@@ -49,7 +26,7 @@ display_main_menu() {
 # 系统信息
 view_vps_info() {
     echo -e "\e[1;34m主机名:\e[0m \e[32m$(hostname)\e[0m"
-    echo -e "\e[1;34m系统版本:\e[0m \e[32m$(lsb_release -ds 2>/dev/null || grep PRETTY_NAME /etc/os-release | cut -d '\"' -f2)\e[0m"
+    echo -e "\e[1;34m系统版本:\e[0m \e[32m$(lsb_release -ds 2>/dev/null || grep PRETTY_NAME /etc/os-release | cut -d '"' -f2)\e[0m"
     echo -e "\e[1;34mLinux版本:\e[0m \e[32m$(uname -r)\e[0m"
     echo "-------------"
     echo -e "\e[1;34mCPU架构:\e[0m \e[32m$(uname -m)\e[0m"
@@ -848,15 +825,11 @@ install_xray() {
                 return
                 ;;            
             3)
-                # —— 方案B：下载到临时文件再执行 ——
-                tmp="$(mktemp)"
-                if fetch_to_file "https://github.com/XTLS/Xray-install/raw/main/install-release.sh" "$tmp" && \
-                   bash "$tmp" remove --purge; then
-                    echo -e "\e[32mXray已卸载。\e[0m"
+                if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove --purge; then
+                echo -e "\e[32mXray已卸载。\e[0m"
                 else
-                    echo -e "\e[31mXray卸载失败！\e[0m"
+                echo -e "\e[31mXray卸载失败！\e[0m"
                 fi
-                rm -f "$tmp"
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
@@ -881,31 +854,14 @@ install_xray_tls() {
         read -p "请输入数字 [1-3] 选择功能 (默认回车退出)：" xray_choice
         case "$xray_choice" in
             1)
-               # —— 方案B：下载到临时文件执行 ——
-               tmp="$(mktemp)"
-               if fetch_to_file "https://github.com/XTLS/Xray-install/raw/main/install-release.sh" "$tmp" && \
-                  bash "$tmp" install && \
-                  sudo curl -fsSL -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VMess-Websocket-TLS/config_server.jsonc"; then
-                    echo -e "\e[32mXray 安装升级完成！\e[0m"
-                    echo "以下是uuid："
-                    echo -e "\e[34m$(xray uuid)\e[0m"
-                    # 安装后自检
-                    xray -version || { echo -e "\e[31mxray 不可用。\e[0m"; rm -f "$tmp"; read -n1 -s -r -p "按任意键返回..."; echo; return; }
-                    if ! xray -test -config /usr/local/etc/xray/config.json; then
-                        # 若 JSONC 注释导致失败，尝试移除行内 // 注释再测
-                        sudo sed -E -i 's#//.*$##' /usr/local/etc/xray/config.json
-                        xray -test -config /usr/local/etc/xray/config.json || {
-                            echo -e "\e[31m配置语法检查失败，请手动修正 /usr/local/etc/xray/config.json。\e[0m"
-                            rm -f "$tmp"
-                            read -n 1 -s -r -p "按任意键返回..."; echo; return;
-                        }
-                    fi
-                    sudo systemctl enable --now xray
-                    systemctl status xray --no-pager || true
+               if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
+                   sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VMess-Websocket-TLS/config_server.jsonc"; then
+                echo -e "\e[32mXray 安装升级完成！\e[0m"
+                echo "以下是uuid："
+                echo -e "\e[34m$(xray uuid)\e[0m"
                 else
-                    echo -e "\e[31mXray 安装升级失败！\e[0m"
+                echo -e "\e[31mXray 安装升级失败！\e[0m"
                 fi
-                rm -f "$tmp"
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
@@ -1005,11 +961,8 @@ install_xray_reality() {
         read -p "请输入数字 [1-3] 选择(默认回车退出)：" xray_choice
         case "$xray_choice" in
             1)
-               # —— 方案B：下载到临时文件执行 ——
-               tmp="$(mktemp)"
-               if fetch_to_file "https://github.com/XTLS/Xray-install/raw/main/install-release.sh" "$tmp" && \
-                  bash "$tmp" install && \
-                  sudo curl -fsSL -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-REALITY%20(without%20being%20stolen)/config_server.jsonc"; then
+               if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
+                  sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-REALITY%20(without%20being%20stolen)/config_server.jsonc"; then
                 echo -e "\e[32mXray 安装升级完成！\e[0m"
                 echo "以下是UUID："
                 echo -e "\e[34m$(xray uuid)\e[0m"
@@ -1020,25 +973,12 @@ install_xray_reality() {
                 echo -e "\e[34m$PRIVATE_KEY\e[0m"                
                 echo "以下是ShortIds："                
                 echo -e "\e[34m$(openssl rand -hex 8)\e[0m"
-                # 安装后自检
-                xray -version || { echo -e "\e[31mxray 不可用。\e[0m"; rm -f "$tmp"; read -n1 -s -r -p "按任意键返回..."; echo; return; }
-                if ! xray -test -config /usr/local/etc/xray/config.json; then
-                    sudo sed -E -i 's#//.*$##' /usr/local/etc/xray/config.json
-                    xray -test -config /usr/local/etc/xray/config.json || {
-                        echo -e "\e[31m配置语法检查失败，请手动修正 /usr/local/etc/xray/config.json。\e[0m"
-                        rm -f "$tmp"
-                        read -n 1 -s -r -p "按任意键返回..."; echo; return;
-                    }
-                fi
-                sudo systemctl enable --now xray
-                systemctl status xray --no-pager || true
-               else
+                else
                 echo -e "\e[31mXray 安装升级失败！\e[0m"
-               fi
-               rm -f "$tmp"
-               read -n 1 -s -r -p "按任意键返回..."
-               echo
-               ;;
+                fi
+                read -n 1 -s -r -p "按任意键返回..."
+                echo
+                ;;
             2)
                 echo -e "\e[33m提示：将UUID、目标网站及私钥填入配置文件中，ShortIds非必须。\e[0m"
                 read -n 1 -s -r -p "按任意键继续..."                                
