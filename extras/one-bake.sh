@@ -85,14 +85,16 @@ display_system_optimization_menu() {
         echo "3) 清理系统"
         echo "4) 开启BBR"
         echo "5) ROOT登录"
+        echo "6) 系统初始化"
         echo "========================================="
-        read -p "请输入数字 [1-5] 选择 (默认回车退出)：" root_choice
+        read -p "请输入数字 [1-6] 选择 (默认回车退出)：" root_choice
         case "$root_choice" in
             1) calibrate_time ;;
             2) update_system ;;
             3) clean_system ;;
             4) enable_bbr ;;
             5) root_login ;;
+            6) user_sysinit ;;
             "") 
                 return
                 ;;            
@@ -195,6 +197,94 @@ root_login() {
     done
 }
 
+# 系统初始化
+user_sysinit() {
+        set -e
+        read -p "$(echo -e '\033[0;31m输入y继续（默认回车退出）:\033[0m ') " confirm
+        [[ "$confirm" != "y" ]] && return 0
+        echo "开始系统清理..."
+        echo -e "\033[0;34m[INFO]\033[0m 清理后装应用文件..."
+            local CLEANUP_PATHS=(
+                "/usr/local/bin/xray" "/usr/local/bin/v2ray" "/usr/local/bin/v2ctl"
+                "/usr/local/bin/sing-box" "/usr/local/bin/hysteria" "/usr/local/bin/hysteria2"
+                "/usr/local/bin/hy2" "/usr/local/bin/clash" "/usr/local/bin/clash-meta"
+                "/usr/local/bin/trojan" "/usr/local/bin/trojan-go" "/usr/local/bin/tuic"
+                "/usr/bin/caddy"
+                "/usr/local/bin/1panel" "/opt/1panel" "/opt/nezha" "/opt/ql"
+                "/opt/portainer" "/opt/filebrowser" "/opt/frp"
+                "/www/server/panel" "/www/server/bt-tasks"
+                "/etc/aria2" "/etc/xray" "/etc/v2ray" "/etc/sing-box" "/etc/hysteria"
+                "/etc/hysteria2" "/etc/clash" "/etc/trojan" "/etc/caddy" "/etc/frp"
+                "/etc/1panel" "/etc/nezha" "/usr/local/etc/xray" "/usr/local/etc/v2ray"
+                "/usr/local/etc/sing-box" "/usr/local/etc/clash"
+                "/var/lib/1panel" "/var/log/xray" "/var/log/v2ray" "/var/log/sing-box"
+                "/var/log/hysteria" "/var/log/nginx"
+        )
+        for path in "${CLEANUP_PATHS[@]}"; do
+            if [[ -e "$path" ]]; then
+                rm -rf "$path" 2>/dev/null && echo -e "\033[0;34m[INFO]\033[0m 删除: $path"
+            fi
+        done
+        echo -e "\033[0;34m[INFO]\033[0m 清理后装systemd服务..."
+        local CLEANUP_SERVICES=(
+            "xray" "v2ray" "sing-box" "hysteria" "hysteria2" "hy2"
+            "clash" "trojan" "caddy" "frps" "frpc" "1panel"
+            "nezha-agent" "nezha-dashboard" "aria2" "filebrowser"
+            "portainer" "docker" "containerd"
+        )
+        for service in "${CLEANUP_SERVICES[@]}"; do
+            systemctl stop "$service" 2>/dev/null || true
+            systemctl disable "$service" 2>/dev/null || true
+            rm -f "/etc/systemd/system/${service}.service"
+            rm -f "/etc/systemd/system/${service}d.service"
+            rm -f "/etc/systemd/system/${service}-agent.service"
+            rm -f "/etc/systemd/system/${service}-dashboard.service"
+        done
+        systemctl daemon-reload 2>/dev/null || true
+        echo -e "\033[0;34m[INFO]\033[0m 终止后装应用进程..."
+        local KILL_PATTERNS=(
+            "xray" "v2ray" "sing-box" "hysteria" "clash" "trojan"
+            "caddy" "frps" "frpc" "1panel" "nezha" "aria2"
+            "filebrowser" "portainer" "docker" "containerd"
+        )
+        for pattern in "${KILL_PATTERNS[@]}"; do
+            pkill -f "$pattern" 2>/dev/null || true
+        done
+        echo -e "\033[0;34m[INFO]\033[0m 删除后装APT包..."
+        local REMOVE_PKGS=("docker.io" "docker-ce" "docker-compose" "containerd.io" "docker-compose-plugin")
+        for pkg in "${REMOVE_PKGS[@]}"; do
+            if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
+                echo -e "\033[0;34m[INFO]\033[0m 删除APT包: $pkg"
+                apt remove --purge -y "$pkg" -qq 2>/dev/null || true
+            fi
+        done
+        echo -e "\033[0;34m[INFO]\033[0m 清理用户目录..."
+        for home in /home/*/; do
+            [[ -d "$home" ]] || continue
+            rm -rf "${home}.config/1panel" "${home}.config/clash" "${home}.config/v2ray" \
+                    "${home}.xray" "${home}.v2ray" 2>/dev/null || true
+        done
+        echo -e "\033[0;34m[INFO]\033[0m 清理缓存..."
+        rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+        apt autoclean apt clean 2>/dev/null || true
+        echo -e "\033[0;34m[INFO]\033[0m 验证系统完整性..."
+        dpkg --configure -a --force-confold 2>/dev/null || true
+        apt update -qq 2>/dev/null || {
+            echo -e "\033[0;34m[INFO]\033[0m 尝试修复APT..."
+            apt install -f -y -qq 2>/dev/null || true
+            apt update -qq 2>/dev/null || true
+        }
+        for service in systemd-resolved systemd-networkd networking; do
+            systemctl is-enabled "$service" >/dev/null 2>&1 && \
+                systemctl restart "$service" 2>/dev/null || true
+        done
+        echo -e "\e[32m系统初始化完成！\e[0m"
+        read -p "$(echo -e '\033[0;31m输入y重启系统（默认回车退出）:\033[0m ') " reboot_choice
+        [[ "$reboot_choice" == "y" ]] && sudo reboot
+        read -n 1 -s -r -p "按任意键返回..."
+        echo
+}
+
 # 常用工具
 common_tools() {
     while true; do
@@ -208,8 +298,9 @@ common_tools() {
         echo "5) 关闭进程"
         echo "6) 查看端口"
         echo "7) 开放端口"
+        echo "8) 网络测速"
         echo "========================================="
-        read -p "请输入数字 [1-7] 选择 (默认回车退出)：" root_choice
+        read -p "请输入数字 [1-8] 选择 (默认回车退出)：" root_choice
         case "$root_choice" in
             1)
                 read -p "请输入要查找的文件名: " filename
@@ -238,7 +329,6 @@ common_tools() {
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
-            
             3)
                 while true; do
                     read -p "请输入要删除的文件或目录名（默认回车退出）: " filename
@@ -377,6 +467,19 @@ common_tools() {
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
+            8)
+                if ! command -v speedtest-cli >/dev/null 2>&1; then
+                    echo "未检测到 speedtest-cli，正在安装..."
+                    sudo apt update
+                    sudo apt install -y speedtest-cli
+                else
+                    echo "已安装 speedtest-cli，直接测速..."
+                fi
+                echo "开始测速..."
+                speedtest-cli
+                read -n 1 -s -r -p "按任意键返回..."
+                echo                
+                ;;
             "") 
                 return
                 ;;            
@@ -395,7 +498,7 @@ install_package() {
         echo "========================================="
         echo "1) apt"
         echo "2) sudo"
-        echo "3) curl"
+        echo "3) wget"
         echo "4) nano"
         echo "5) vim"
         echo "6) zip"
@@ -442,16 +545,16 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y curl; then
-                           echo -e "\e[32mcurl 安装完成！\e[0m"
+                    1) if sudo apt update && sudo apt install -y wget; then
+                           echo -e "\e[32mwget 安装完成！\e[0m"
                         else
-                            echo -e "\e[31mcurl 安装失败！\e[0m"
+                            echo -e "\e[31mwget 安装失败！\e[0m"
                         fi
                         ;;
-                    2) if sudo apt remove -y curl; then
-                            echo -e "\e[32mcurl 卸载完成！\e[0m"
+                    2) if sudo apt remove -y wget; then
+                            echo -e "\e[32mwget 卸载完成！\e[0m"
                         else
-                            echo -e "\e[31mcurl 卸载失败！\e[0m"
+                            echo -e "\e[31mwget 卸载失败！\e[0m"
                         fi
                         ;;
                     "") ;;
@@ -676,8 +779,8 @@ apply_certificate() {
                 install_path=${install_path:-/path/to}
                 if mkdir -p "$install_path" && \
                     ~/.acme.sh/acme.sh --installcert -d "$domain" \
-                    --key-file "$install_path/private.key" --fullchain-file "$install_path/fullchain.crt" && \
-                    sudo chmod 644 "$install_path/fullchain.crt" "$install_path/private.key"; then
+                    --key-file "$install_path/key.key" --fullchain-file "$install_path/certificate.crt" && \
+                    sudo chmod 644 "$install_path/certificate.crt" "$install_path/key.key"; then
                    echo -e "\e[32m证书安装完成！路径: $install_path\e[0m"
                    else
                    echo -e "\e[31m证书安装失败，请检查输入。\e[0m"
@@ -710,7 +813,7 @@ install_xray() {
         echo "========================================="
     echo -e "               \e[1;32m安装Xray\e[0m       "
         echo "========================================="
-        echo "1) VLESS-WS-TLS"
+        echo "1) VMESS-WS-TLS"
         echo "2) VLESS-TCP-REALITY"
         echo "3) 卸载服务"
         echo "========================================="
@@ -738,11 +841,11 @@ install_xray() {
     done
 }
 
-# 安装VLESS-WS-TLS
+# 安装VMESS-WS-TLS
 install_xray_tls() {
     while true; do
         echo "========================================="
-        echo -e "               \e[1;34mVLESS-WS-TLS\e[0m   "
+        echo -e "               \e[1;34mVMESS-WS-TLS\e[0m   "
         echo "========================================="
         echo "1) 安装升级"
         echo "2) 编辑配置"
@@ -752,7 +855,7 @@ install_xray_tls() {
         case "$xray_choice" in
             1)
                if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
-                   sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-TLS-WS%20(recommended)/config_server.jsonc"; then
+                   sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VMess-Websocket-TLS/config_server.jsonc"; then
                 echo -e "\e[32mXray 安装升级完成！\e[0m"
                 echo "以下是uuid："
                 echo -e "\e[34m$(xray uuid)\e[0m"
@@ -802,7 +905,7 @@ install_xray_tls() {
                     fi
 }
                 while true; do
-                    sudo systemctl restart xray
+                    sudo -H systemctl restart xray 2>/dev/null
                     sleep 2
                     if ! systemctl is-active --quiet xray; then
                         echo -e "\e[31m未能启动 xray 服务，请检查日志。\e[0m"
@@ -827,9 +930,9 @@ install_xray_tls() {
                 WS_PATH=${WS_PATH:-"/"}
                 TLS=${TLS:-"tls"}
                 PORT=${PORT:-"443"}
-                vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&security=${TLS}&sni=${SNI}&type=ws&host=${HOST}&path=${WS_PATH}#Xray"
+                vmess_uri="vmess://${UUID}@${ADDRESS}:${PORT}?encryption=none&security=${TLS}&sni=${SNI}&type=ws&host=${HOST}&path=${WS_PATH}#Xray"
                 echo "VLESS链接如下"
-                echo -e "\e[34m$vless_uri\e[0m"
+                echo -e "\e[34m$vmess_uri\e[0m"
                 break
                 done
                 read -n 1 -s -r -p "按任意键返回..."
@@ -859,7 +962,7 @@ install_xray_reality() {
         case "$xray_choice" in
             1)
                if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
-                  sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-XTLS-Vision-REALITY/config_server.jsonc"; then
+                  sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-REALITY%20(without%20being%20stolen)/config_server.jsonc"; then
                 echo -e "\e[32mXray 安装升级完成！\e[0m"
                 echo "以下是UUID："
                 echo -e "\e[34m$(xray uuid)\e[0m"
@@ -901,23 +1004,21 @@ install_xray_reality() {
                     grep -aPo "\"$pattern\":\s*$match" "$CONFIG_PATH" | head -n 1 | sed -E "s/\"$pattern\":\s*//;s/^\"//;s/\"$//"
 }
                 extract_server_name() {
-                    local result=$(grep -aA 2 "\"serverNames\": \[" "$CONFIG_PATH" | awk 'NR==2{gsub(/^\s+|\s*\/\/.*$/,"");split($0,a,","); for (i in a) {gsub(/^[\"\s]+|[\"\s]+$/,"",a[i]);printf "%s ",a[i]}}')
-                    if [[ -n "$result" ]]; then
-                        remove_spaces_and_quotes "$result"
-                    fi
-}
+                    local result=$(grep -A 5 '"serverNames"' "$CONFIG_PATH" | grep -o '"[^"]*"' | head -n 2 | tail -n 1 | sed 's/"//g')
+                    echo "$result"
+                }
                 extract_list_field() {
                     local list_parent=$1
                     local list_field=$2
                     if [[ "$list_field" == "shortIds" || "$list_field" == "serverNames" ]]; then
-                        local result=$(grep -aA 2 "\"$list_field\": \[" "$CONFIG_PATH" | awk 'NR==2{gsub(/^\s+|\s*\/\/.*$/,"");split($0,a,","); for (i in a) {gsub(/^[\"\s]+|[\"\s]+$/,"",a[i]);printf "%s ",a[i]}}')
+                        local result=$(grep -aA 2 "\"$list_field\": \[" "$CONFIG_PATH" | awk 'NR==2{gsub(/^\s+|\s*\/\/.*$/,"");split($0,a,","); for (i in a) {gsub(/^["\s]+|["\s]+$/,"",a[i]);printf "%s ",a[i]}}')
                         if [[ -n "$result" ]]; then
                             remove_spaces_and_quotes "$result"
                         fi
                     else
                         grep -aPoz "\"$list_parent\":\s*\[\s*\{[^}]*\}\s*\]" "$CONFIG_PATH" | grep -aPo "\"$list_field\":\s*\"[^\"]*\"" | head -n 1 | sed -E "s/\"$list_field\":\s*\"([^\"]*)\"/\1/"
                     fi
-}
+                }
                 get_public_ip() {
                     ipv4=$(curl -s https://api.ipify.org)
                     if [[ -n "$ipv4" ]]; then
@@ -927,7 +1028,7 @@ install_xray_reality() {
                     fi
 }
                 while true; do
-                    sudo systemctl restart xray
+                    sudo -H systemctl restart xray 2>/dev/null
                     sleep 2
                     if ! systemctl is-active --quiet xray; then
                        echo -e "\e[31m未能启动 xray 服务，请检查日志。\e[0m"
@@ -946,12 +1047,10 @@ install_xray_reality() {
                 PORT=${PORT:-"443"}
                 FLOW=$(extract_field "flow" "\"[^\"]*\"")
                 SID=${SHORT_IDS:-""}
-                vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&sid=${SID}&type=tcp&headerType=none#Xray"
+                PBK=${PUBLIC_KEY}
+                vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray"
                 echo "VLESS链接如下："
                 echo -e "\e[34m$vless_uri\e[0m"
-                echo "以下是公钥："
-                echo -e "\e[34m$PUBLIC_KEY\e[0m"
-                echo -e "\e[33m提示：将公钥填入客户端中。\e[0m"
                 break
                 done
                 read -n 1 -s -r -p "按任意键返回..."
@@ -983,12 +1082,12 @@ install_hysteria2() {
         case "$hysteria_choice" in
             1)
                 if bash <(curl -fsSL https://get.hy2.sh/) && \
-                   sudo systemctl enable --now hysteria-server.service && \
-                   sysctl -w net.core.rmem_max=16777216 && \
-                   sysctl -w net.core.wmem_max=16777216; then
-                echo -e "\e[32mhysteria2 安装升级完成！\e[0m"
+                sudo systemctl enable --now hysteria-server.service; then
+                    sysctl -w net.core.rmem_max=16777216 || true
+                    sysctl -w net.core.wmem_max=16777216 || true
+                    echo -e "\e[32mhysteria2 安装升级完成！\e[0m"
                 else
-                echo -e "\e[31mhysteria2 安装升级失败！\e[0m"
+                    echo -e "\e[31mhysteria2 安装升级失败！\e[0m"
                 fi
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
@@ -1014,9 +1113,23 @@ install_hysteria2() {
                     openssl x509 -in "$cert_file" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
                     openssl x509 -in "$cert_file" -text -noout | grep -Po "CN=[^ ]*" | sed 's/CN=//'
                 }
+                get_ip_address() {
+                    local ip=""
+                    ip=$(curl -4 -s --connect-timeout 5 https://ifconfig.me 2>/dev/null)
+                    if [[ -n "$ip" && "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                        echo "$ip"
+                        return 0
+                    fi
+                    ip=$(curl -6 -s --connect-timeout 5 https://ifconfig.me 2>/dev/null)
+                    if [[ -n "$ip" && "$ip" =~ ^[0-9a-fA-F:]+$ ]]; then
+                        echo "[$ip]"  # IPv6地址需要用方括号包围
+                        return 0
+                    fi    
+                    return 1
+                }
                 if [ ! -f "$config_file" ]; then
                     echo -e "\e[31m未能找到配置文件。\e[0m"
-                    break
+                    exit 1
                 fi
                 while true; do
                     sudo systemctl restart hysteria-server.service
@@ -1027,23 +1140,24 @@ install_hysteria2() {
                         break
                     else
                         echo -e "\e[32mhysteria已启动！\e[0m"
-                    fi
+                    fi    
                     port=$(grep "^listen:" "$config_file" | awk -F: '{print $3}' || echo "443")
                     password=$(grep "^  password:" "$config_file" | awk '{print $2}')
-                    domain=$(grep "domains:" "$config_file" -A 1 | tail -n 1 | tr -d " -")
+                    domain=$(grep "domains:" "$config_file" -A 1 | tail -n 1 | tr -d " -")    
                     if [ -z "$domain" ]; then
                         cert_path=$(grep "cert:" "$config_file" | awk '{print $2}' | tr -d '"')
                         if [ -z "$cert_path" ] || [ ! -f "$cert_path" ]; then
                             echo -e "\e[31m没有找到域名或证书。\e[0m"
-                            break
                         fi
                         domain=$(get_domain_from_cert "$cert_path")
                         if [ -z "$domain" ]; then
                             echo -e "\e[31m从证书中提取域名失败。\e[0m"
-                            break
                         fi
                     fi
-                    ip=$(hostname -I | awk '{print $1}')
+                    ip=$(get_ip_address)    
+                    if [ -z "$ip" ]; then
+                        echo -e "\e[31m无法获取IP地址，请检查网络连接。\e[0m"
+                    fi    
                     hysteria2_uri="hysteria2://$password@$ip:$port?sni=$domain&insecure=0#hysteria"
                     echo "hysteria2 链接如下："
                     echo -e "\e[34m$hysteria2_uri\e[0m"
@@ -1121,6 +1235,15 @@ install_sing-box() {
                if bash <(curl -fsSL https://sing-box.app/deb-install.sh) && \
                   sudo curl -L -o /etc/sing-box/config.json "https://raw.githubusercontent.com/sezhai/VPS-Script/refs/heads/main/extras/sing-box/config.json"; then
                    echo -e "\e[32msing-box 安装升级成功！\e[0m"
+                echo "以下是UUID："
+                echo -e "\e[34m$(sing-box generate uuid)\e[0m"
+                keys=$(sing-box generate reality-keypair)
+                export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
+                export PUBLIC_KEY=$(echo "$keys" | awk '/PublicKey/  {print $2}')
+                echo "以下是私钥："
+                echo -e "\e[34m$PRIVATE_KEY\e[0m"             
+                echo "以下是ShortIds："                
+                echo -e "\e[34m$(sing-box generate rand 8 --hex)\e[0m"                   
                else
                    echo -e "\e[31msing-box 安装升级失败！\e[0m"
                fi
@@ -1153,8 +1276,28 @@ install_sing-box() {
                     echo -e "\e[32msing-box已启动！\e[0m"
                 fi
                 get_ip() {
-                    curl -s https://api.ipify.org || echo "127.0.0.1"
-                }
+                    local ipv4=$(curl -s -4 --connect-timeout 5 https://api.ipify.org 2>/dev/null)
+                    if [ -n "$ipv4" ] && [[ "$ipv4" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                        echo "$ipv4"
+                        return 0
+                    fi
+                    ipv4=$(curl -s -4 --connect-timeout 5 https://icanhazip.com 2>/dev/null | tr -d '\n')
+                    if [ -n "$ipv4" ] && [[ "$ipv4" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                        echo "$ipv4"
+                        return 0
+                    fi
+                    local ipv6=$(curl -s -6 --connect-timeout 5 https://api6.ipify.org 2>/dev/null)
+                    if [ -n "$ipv6" ] && [[ "$ipv6" =~ ^[0-9a-fA-F:]+$ ]]; then
+                        echo "$ipv6"
+                        return 0
+                    fi
+                    ipv6=$(curl -s -6 --connect-timeout 5 https://icanhazip.com 2>/dev/null | tr -d '\n')
+                    if [ -n "$ipv6" ] && [[ "$ipv6" =~ ^[0-9a-fA-F:]+$ ]]; then
+                        echo "$ipv6"
+                        return 0
+                    fi
+                    echo "127.0.0.1"
+                }               
                 urlencode() {
                     local s="$1" ch
                     for ((i=0; i<${#s}; i++)); do
@@ -1164,65 +1307,56 @@ install_sing-box() {
                             *) printf '%%%02X' "'$ch" ;;
                         esac
                     done
+                }                
+                get_domain_from_cert() {
+                    openssl x509 -in "$1" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
+                    openssl x509 -in "$1" -text -noout | grep -Po "CN=[^ ]*" | sed 's/CN=//'
                 }
                 ip=$(get_ip)
-                vmess_uuid=$(grep -Pzo '(?s)"tag": "vmess".*?uuid":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vmess_port=$(grep -Pzo '(?s)"tag": "vmess".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
-                vmess_path=$(grep -Pzo '(?s)"tag": "vmess".*?path":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vmess_host=$(grep -Pzo '(?s)"tag": "vmess".*?server_name":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vmess_sni="$vmess_host"
-                vmess_json=$(cat <<EOF
-                {
-                "v": "2",
-                "ps": "vmess",
-                "add": "$ip",
-                "port": "$vmess_port",
-                "id": "$vmess_uuid",
-                "aid": "0",
-                "scy": "auto",
-                "net": "ws",
-                "type": "none",
-                "host": "$vmess_host",
-                "path": "$vmess_path",
-                "tls": "tls",
-                "sni": "$vmess_sni",
-                "alpn": "http/1.1",
-                "fp": "chrome"
-                }
-EOF
-)
-                vmess_link="vmess://$(echo -n "$vmess_json" | base64 -w0)"
-                vless_uuid=$(grep -Pzo '(?s)"tag": "reality".*?uuid":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vless_port=$(grep -Pzo '(?s)"tag": "reality".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
-                server_ip=$(curl -s icanhazip.com)
-                vless_sni=$(grep -Pzo '(?s)"tag": "reality".*?server_name":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vless_sid=$(grep -Pzo '(?s)"tag": "reality".*?short_id":\s*\[\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                vless_link="vless://$vless_uuid@$server_ip:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&sid=$vless_sid&type=tcp&headerType=none#reality"
-                get_domain_from_cert() {
-                    local cert_file=$1
-                    openssl x509 -in "$cert_file" -text -noout | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' ||
-                    openssl x509 -in "$cert_file" -text -noout | grep -Po "CN=[^ ]*" | sed 's/CN=//'
-                }
-                h2_pass_raw=$(grep -Pzo '(?s)"tag": "hysteria2".*?password":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                h2_pass=$(urlencode "$h2_pass_raw")
-                h2_port=$(grep -Pzo '(?s)"tag": "hysteria2".*?listen_port":\s*\K[0-9]+' "$CONFIG_PATH" | tr -d '\0')
-                cert_path=$(grep -Pzo '(?s)"tag": "hysteria2".*?"certificate_path":\s*"\K[^"]+' "$CONFIG_PATH" | tr -d '\0')
-                if [ -z "$cert_path" ] || [ ! -f "$cert_path" ]; then
-                    echo -e "\e[31m没有找到证书路径。\e[0m"
-                    exit 1
+                is_ipv6=false
+                if [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]] && [[ "$ip" != "127.0.0.1" ]]; then
+                    is_ipv6=true
                 fi
-                h2_domain=$(get_domain_from_cert "$cert_path")
-                if [ -z "$h2_domain" ]; then
-                    echo -e "\e[31m从证书中提取SNI失败。\e[0m"
-                    exit 1
+                if [ "$is_ipv6" = true ]; then
+                    ip_for_url="[$ip]"
+                else
+                    ip_for_url="$ip"
+                fi               
+                if grep -q '"tag":\s*"vmess"' "$CONFIG_PATH"; then
+                    vmess_uuid=$(grep -A 20 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"uuid":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
+                    vmess_port=$(grep -A 5 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
+                    vmess_path=$(grep -A 30 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"path":\s*"[^"]*"' | cut -d'"' -f4)
+                    vmess_host=$(grep -A 30 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"server_name":\s*"[^"]*"' | cut -d'"' -f4)
+                    if [ -n "$vmess_uuid" ] && [ -n "$vmess_port" ]; then
+                        vmess_json='{"v":"2","ps":"vmess","add":"'$ip'","port":"'$vmess_port'","id":"'$vmess_uuid'","aid":"0","scy":"auto","net":"ws","type":"none","host":"'$vmess_host'","path":"'$vmess_path'","tls":"tls","sni":"'$vmess_host'","alpn":"http/1.1","fp":"chrome"}'
+                        echo "vmess 链接如下："
+                        echo -e "\e[34mvmess://$(echo -n "$vmess_json" | base64 -w0)\e[0m"
+                    fi
+                fi                
+                if grep -q '"tag":\s*"reality"' "$CONFIG_PATH"; then
+                    vless_uuid=$(grep -A 20 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"uuid":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
+                    vless_port=$(grep -A 5 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
+                    vless_sni=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"server_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
+                    vless_sid=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH" | sed -n '/"short_id"/,/]/p' | grep -o '"[a-fA-F0-9]*"' | head -1 | tr -d '"')
+                    if [ -n "$vless_uuid" ] && [ -n "$vless_port" ]; then
+                        vless_link="vless://$vless_uuid@$ip_for_url:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$PUBLIC_KEY&sid=$vless_sid&type=tcp&headerType=none#reality"
+                        echo "reality 链接如下："
+                        echo -e "\e[34m$vless_link\e[0m"
+                    fi
+                fi               
+                if grep -q '"tag":\s*"hysteria2"' "$CONFIG_PATH"; then
+                    h2_pass=$(grep -A 20 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"password":\s*"[^"]*"' | cut -d'"' -f4)
+                    h2_port=$(grep -A 5 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
+                    cert_path=$(grep -A 30 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"certificate_path":\s*"[^"]*"' | cut -d'"' -f4)
+                    if [ -n "$h2_pass" ] && [ -n "$h2_port" ] && [ -f "$cert_path" ]; then
+                        h2_domain=$(get_domain_from_cert "$cert_path")
+                        if [ -n "$h2_domain" ]; then
+                            echo "hysteria2 链接如下："
+                            echo -e "\e[34mhysteria2://$(urlencode "$h2_pass")@$ip_for_url:$h2_port?sni=$h2_domain&insecure=0#hysteria2\e[0m"
+                        fi
+                    fi
                 fi
-                h2_link="hysteria2://$h2_pass@$ip:$h2_port?sni=$h2_domain&insecure=0#hysteria2"
-                echo "vmess 链接如下："
-                echo -e "\e[34m$vmess_link\e[0m"
-                echo "reality 链接如下："
-                echo -e "\e[34m$vless_link\e[0m"
-                echo "hysteria2 链接如下："
-                echo -e "\e[34m$h2_link\e[0m"
+                
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
