@@ -1,5 +1,41 @@
 #!/bin/bash
+# ---------- 权限与 $SUDO 探测 ----------
+# 若以 root 运行则不使用 sudo；否则要求系统已安装 sudo。
+if [ "$(id -u)" -ne 0 ]; then
+  if command -v $SUDO >/dev/null 2>&1; then
+    SUDO="sudo"
+  else
+    echo "未检测到 sudo，请以 root 运行本脚本，或先安装 sudo：apt update && apt install -y sudo" >&2
+    exit 1
+  fi
+else
+  SUDO=""
+fi
+# -------------------------------------
 # VPS 管理脚本
+
+# -----------------------------------------------------------------------------
+# 辅助函数
+# -----------------------------------------------------------------------------
+
+# 安全下载到文件：优先 curl，其次 wget；若均不存在，自动 apt 更新并安装 curl（Debian/Ubuntu）
+fetch_to_file() {
+    local url="$1" dest="$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$dest"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$dest" "$url"
+    else
+        echo "未检测到 curl 或 wget，正在安装 curl..." >&2
+        if command -v apt >/dev/null 2>&1; then
+            $SUDO apt update -y >/dev/null 2>&1 && $SUDO apt install -y curl >/dev/null 2>&1
+            curl -fsSL "$url" -o "$dest"
+        else
+            echo "无法自动安装 curl（未发现 apt）。请先手动安装 curl 或 wget。" >&2
+            return 1
+        fi
+    fi
+}
 
 # -----------------------------------------------------------------------------
 # 函数定义
@@ -26,7 +62,7 @@ display_main_menu() {
 # 系统信息
 view_vps_info() {
     echo -e "\e[1;34m主机名:\e[0m \e[32m$(hostname)\e[0m"
-    echo -e "\e[1;34m系统版本:\e[0m \e[32m$(lsb_release -ds 2>/dev/null || grep PRETTY_NAME /etc/os-release | cut -d '"' -f2)\e[0m"
+    echo -e "\e[1;34m系统版本:\e[0m \e[32m$(lsb_release -ds 2>/dev/null || grep PRETTY_NAME /etc/os-release | cut -d '\"' -f2)\e[0m"
     echo -e "\e[1;34mLinux版本:\e[0m \e[32m$(uname -r)\e[0m"
     echo "-------------"
     echo -e "\e[1;34mCPU架构:\e[0m \e[32m$(uname -m)\e[0m"
@@ -106,8 +142,8 @@ display_system_optimization_menu() {
 # 时间校准
 calibrate_time() {
     echo -e "\n[校准时间]"
-    sudo timedatectl set-timezone Asia/Shanghai
-    sudo timedatectl set-ntp true
+    $SUDO timedatectl set-timezone Asia/Shanghai
+    $SUDO timedatectl set-ntp true
     echo -e "\e[32m时间校准完成，当前时区为 Asia/Shanghai。\e[0m"
     read -n 1 -s -r -p "按任意键返回..."
     echo
@@ -116,10 +152,10 @@ calibrate_time() {
 # 系统更新
 update_system() {
     echo -e "\n[更新系统]"
-    if ! sudo apt update -y && ! sudo apt full-upgrade -y; then
+    if ! $SUDO apt update -y && ! $SUDO apt full-upgrade -y; then
         echo -e "\e[31m系统更新失败！请检查网络连接或源列表。\e[0m"
     else
-      sudo apt autoremove -y && sudo apt autoclean -y
+      $SUDO apt autoremove -y && $SUDO apt autoclean -y
         echo -e "\e[32m系统更新完成！\e[0m"
     fi
     read -n 1 -s -r -p "按任意键返回..."
@@ -129,10 +165,10 @@ update_system() {
 # 系统清理
 clean_system() {
     echo -e "\n[清理系统]"
-    sudo apt autoremove --purge -y
-    sudo apt clean -y && sudo apt autoclean -y
-    sudo journalctl --rotate && sudo journalctl --vacuum-time=10m
-    sudo journalctl --vacuum-size=50M
+    $SUDO apt autoremove --purge -y
+    $SUDO apt clean -y && $SUDO apt autoclean -y
+    $SUDO journalctl --rotate && $SUDO journalctl --vacuum-time=10m
+    $SUDO journalctl --vacuum-size=50M
     echo -e "\e[32m系统清理完成！\e[0m"
     read -n 1 -s -r -p "按任意键返回..."
     echo
@@ -144,9 +180,9 @@ enable_bbr() {
     if sysctl net.ipv4.tcp_congestion_control | grep -q 'bbr'; then
     echo -e "\e[32mBBR已开启！\e[0m"
     else
-        echo "net.core.default_qdisc = fq" | sudo tee -a /etc/sysctl.conf
-        echo "net.ipv4.tcp_congestion_control = bbr" | sudo tee -a /etc/sysctl.conf
-        if sudo sysctl -p; then
+        echo "net.core.default_qdisc = fq" | $SUDO tee -a /etc/sysctl.conf
+        echo "net.ipv4.tcp_congestion_control = bbr" | $SUDO tee -a /etc/sysctl.conf
+        if $SUDO sysctl -p; then
            echo -e "\e[32mBBR已开启！\e[0m"
         else
             echo -e "\e[31mBBR 开启失败！\e[0m"
@@ -169,19 +205,19 @@ root_login() {
         read -p "请输入数字 [1-3] 选择 (默认回车退出)：" root_choice
         case "$root_choice" in
             1) 
-                sudo passwd root
+                $SUDO passwd root
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
             2) 
-                sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config;
-                sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config;
+                $SUDO sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config;
+                $SUDO sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config;
                 echo -e "\e[32m配置修改成功！\e[0m"
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
             3)
-                if sudo systemctl restart sshd.service; then
+                if $SUDO systemctl restart sshd.service; then
                    echo -e "\e[32mROOT登录已开启！\e[0m"
                 else
                     echo -e "\e[31mROOT登录开启失败！\e[0m"
@@ -280,7 +316,7 @@ user_sysinit() {
         done
         echo -e "\e[32m系统初始化完成！\e[0m"
         read -p "$(echo -e '\033[0;31m输入y重启系统（默认回车退出）:\033[0m ') " reboot_choice
-        [[ "$reboot_choice" == "y" ]] && sudo reboot
+        [[ "$reboot_choice" == "y" ]] && $SUDO reboot
         read -n 1 -s -r -p "按任意键返回..."
         echo
 }
@@ -456,7 +492,7 @@ common_tools() {
                         echo -e "\e[31m无效的端口号，请输入1到65535之间的数字。\e[0m"
                     break
                     fi
-                    command="sudo iptables -A INPUT -p $protocol --dport $port -j ACCEPT"
+                    command="$SUDO iptables -A INPUT -p $protocol --dport $port -j ACCEPT"
                     if $command; then
                         echo -e "\e[32m端口$port已开放（$protocol）!\e[0m"
                     else
@@ -470,8 +506,8 @@ common_tools() {
             8)
                 if ! command -v speedtest-cli >/dev/null 2>&1; then
                     echo "未检测到 speedtest-cli，正在安装..."
-                    sudo apt update
-                    sudo apt install -y speedtest-cli
+                    $SUDO apt update
+                    $SUDO apt install -y speedtest-cli
                 else
                     echo "已安装 speedtest-cli，直接测速..."
                 fi
@@ -522,13 +558,13 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if apt update && apt install sudo -y; then
+                    1) if apt update && apt install $SUDO -y; then
                             echo -e "\e[32msudo 安装完成！\e[0m"
                         else
                             echo -e "\e[31msudo 安装失败！\e[0m"
                         fi
                          ;;
-                    2) if sudo apt update && sudo apt remove -y sudo; then
+                    2) if $SUDO apt update && $SUDO apt remove -y sudo; then
                             echo -e "\e[32msudo 卸载完成！\e[0m"
                         else
                              echo -e "\e[31msudo 卸载失败！\e[0m"
@@ -545,13 +581,13 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y wget; then
+                    1) if $SUDO apt update && $SUDO apt install -y wget; then
                            echo -e "\e[32mwget 安装完成！\e[0m"
                         else
                             echo -e "\e[31mwget 安装失败！\e[0m"
                         fi
                         ;;
-                    2) if sudo apt remove -y wget; then
+                    2) if $SUDO apt remove -y wget; then
                             echo -e "\e[32mwget 卸载完成！\e[0m"
                         else
                             echo -e "\e[31mwget 卸载失败！\e[0m"
@@ -568,13 +604,13 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y nano; then
+                    1) if $SUDO apt update && $SUDO apt install -y nano; then
                             echo -e "\e[32mnano 安装完成！\e[0m"
                         else
                             echo -e "\e[31mnano 安装失败！\e[0m"
                         fi
                          ;;
-                    2) if sudo apt remove -y nano; then
+                    2) if $SUDO apt remove -y nano; then
                             echo -e "\e[32mnano 卸载完成！\e[0m"
                         else
                              echo -e "\e[31mnano 卸载失败！\e[0m"
@@ -591,13 +627,13 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y vim; then
+                    1) if $SUDO apt update && $SUDO apt install -y vim; then
                             echo -e "\e[32mvim 安装完成！\e[0m"
                         else
                             echo -e "\e[31mvim 安装失败！\e[0m"
                         fi
                          ;;
-                    2) if sudo apt remove -y vim; then
+                    2) if $SUDO apt remove -y vim; then
                             echo -e "\e[32mvim 卸载完成！\e[0m"
                         else
                              echo -e "\e[31mvim 卸载失败！\e[0m"
@@ -614,13 +650,13 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y zip; then
+                    1) if $SUDO apt update && $SUDO apt install -y zip; then
                             echo -e "\e[32mzip 安装完成！\e[0m"
                         else
                             echo -e "\e[31mzip 安装失败！\e[0m"
                         fi
                          ;;
-                    2) if sudo apt remove -y zip; then
+                    2) if $SUDO apt remove -y zip; then
                             echo -e "\e[32mzip 卸载完成！\e[0m"
                         else
                              echo -e "\e[31mzip 卸载失败！\e[0m"
@@ -637,13 +673,13 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y git; then
+                    1) if $SUDO apt update && $SUDO apt install -y git; then
                             echo -e "\e[32mgit 安装完成！\e[0m"
                         else
                            echo -e "\e[31mgit 安装失败！\e[0m"
                         fi
                          ;;
-                    2)  if sudo apt remove -y git; then
+                    2)  if $SUDO apt remove -y git; then
                             echo -e "\e[32mgit 卸载完成！\e[0m"
                          else
                             echo -e "\e[31mgit 卸载失败！\e[0m"
@@ -660,13 +696,13 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if sudo apt update && sudo apt install -y htop; then
+                    1) if $SUDO apt update && $SUDO apt install -y htop; then
                             echo -e "\e[32mhtop 安装完成！\e[0m"
                         else
                             echo -e "\e[31mhtop 安装失败！\e[0m"
                         fi
                          ;;
-                    2) if sudo apt remove -y htop; then
+                    2) if $SUDO apt remove -y htop; then
                            echo -e "\e[32mhtop 卸载完成！\e[0m"
                         else
                             echo -e "\e[31mhtop 卸载失败！\e[0m"
@@ -689,7 +725,7 @@ install_package() {
                             echo -e "\e[31mdocker 安装失败！\e[0m"
                         fi
                          ;;
-                    2) if sudo apt remove -y docker; then
+                    2) if $SUDO apt remove -y docker; then
                             echo -e "\e[32mdocker 卸载完成！\e[0m"
                          else
                             echo -e "\e[31mdocker 卸载失败！\e[0m"
@@ -725,10 +761,10 @@ apply_certificate() {
         case "$cert_choice" in
             1)
                 read -p "请输入邮箱地址: " email
-                sudo apt update
+                $SUDO apt update
                 if ! command -v crontab &> /dev/null; then
                     echo "正在安装 cron..."
-                    if sudo apt install -y cron; then
+                    if $SUDO apt install -y cron; then
                         echo -e "\e[32mcron 安装完成！\e[0m"
                     else
                         echo -e "\e[31mcron 安装失败！\e[0m"
@@ -736,7 +772,7 @@ apply_certificate() {
                 fi
                 if ! command -v socat &> /dev/null; then
                     echo "正在安装 socat..."
-                    if sudo apt install -y socat; then
+                    if $SUDO apt install -y socat; then
                         echo -e "\e[32msocat 安装完成！\e[0m"
                     else
                         echo -e "\e[31msocat 安装失败！\e[0m"
@@ -780,7 +816,7 @@ apply_certificate() {
                 if mkdir -p "$install_path" && \
                     ~/.acme.sh/acme.sh --installcert -d "$domain" \
                     --key-file "$install_path/key.key" --fullchain-file "$install_path/certificate.crt" && \
-                    sudo chmod 644 "$install_path/certificate.crt" "$install_path/key.key"; then
+                    $SUDO chmod 644 "$install_path/certificate.crt" "$install_path/key.key"; then
                    echo -e "\e[32m证书安装完成！路径: $install_path\e[0m"
                    else
                    echo -e "\e[31m证书安装失败，请检查输入。\e[0m"
@@ -825,11 +861,15 @@ install_xray() {
                 return
                 ;;            
             3)
-                if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove --purge; then
-                echo -e "\e[32mXray已卸载。\e[0m"
+                # —— 方案B：下载到临时文件再执行 ——
+                tmp="$(mktemp)"
+                if fetch_to_file "https://github.com/XTLS/Xray-install/raw/main/install-release.sh" "$tmp" && \
+                   bash "$tmp" remove --purge; then
+                    echo -e "\e[32mXray已卸载。\e[0m"
                 else
-                echo -e "\e[31mXray卸载失败！\e[0m"
+                    echo -e "\e[31mXray卸载失败！\e[0m"
                 fi
+                rm -f "$tmp"
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
@@ -854,14 +894,31 @@ install_xray_tls() {
         read -p "请输入数字 [1-3] 选择功能 (默认回车退出)：" xray_choice
         case "$xray_choice" in
             1)
-               if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
-                   sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VMess-Websocket-TLS/config_server.jsonc"; then
-                echo -e "\e[32mXray 安装升级完成！\e[0m"
-                echo "以下是uuid："
-                echo -e "\e[34m$(xray uuid)\e[0m"
+               # —— 方案B：下载到临时文件执行 ——
+               tmp="$(mktemp)"
+               if fetch_to_file "https://github.com/XTLS/Xray-install/raw/main/install-release.sh" "$tmp" && \
+                  bash "$tmp" install && \
+                  $SUDO curl -fsSL -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VMess-Websocket-TLS/config_server.jsonc"; then
+                    echo -e "\e[32mXray 安装升级完成！\e[0m"
+                    echo "以下是uuid："
+                    echo -e "\e[34m$(xray uuid)\e[0m"
+                    # 安装后自检
+                    xray -version || { echo -e "\e[31mxray 不可用。\e[0m"; rm -f "$tmp"; read -n1 -s -r -p "按任意键返回..."; echo; return; }
+                    if ! xray -test -config /usr/local/etc/xray/config.json; then
+                        # 若 JSONC 注释导致失败，尝试移除行内 // 注释再测
+                        $SUDO sed -E -i 's#//.*$##' /usr/local/etc/xray/config.json
+                        xray -test -config /usr/local/etc/xray/config.json || {
+                            echo -e "\e[31m配置语法检查失败，请手动修正 /usr/local/etc/xray/config.json。\e[0m"
+                            rm -f "$tmp"
+                            read -n 1 -s -r -p "按任意键返回..."; echo; return;
+                        }
+                    fi
+                    $SUDO systemctl enable --now xray
+                    systemctl status xray --no-pager || true
                 else
-                echo -e "\e[31mXray 安装升级失败！\e[0m"
+                    echo -e "\e[31mXray 安装升级失败！\e[0m"
                 fi
+                rm -f "$tmp"
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
@@ -869,13 +926,13 @@ install_xray_tls() {
                 echo -e "\e[33m提示：将UUID填入配置文件中。若已执行成功默认设置的“安装证书”则证书路径无须修改。\e[0m"
                 read -n 1 -s -r -p "按任意键继续..."                
                 if ! command -v nano >/dev/null 2>&1; then
-                sudo apt update >/dev/null 2>&1 && sudo apt install -y nano >/dev/null 2>&1
+                $SUDO apt update >/dev/null 2>&1 && $SUDO apt install -y nano >/dev/null 2>&1
                 fi
                 if ! command -v nano >/dev/null 2>&1; then
                 echo -e "\e[31m错误：无法安装或找到 nano！\e[0m" >&2
                 exit 1
                 fi
-                sudo nano /usr/local/etc/xray/config.json
+                $SUDO nano /usr/local/etc/xray/config.json
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
@@ -905,7 +962,7 @@ install_xray_tls() {
                     fi
 }
                 while true; do
-                    sudo -H systemctl restart xray 2>/dev/null
+                    $SUDO -H systemctl restart xray 2>/dev/null
                     sleep 2
                     if ! systemctl is-active --quiet xray; then
                         echo -e "\e[31m未能启动 xray 服务，请检查日志。\e[0m"
@@ -961,8 +1018,11 @@ install_xray_reality() {
         read -p "请输入数字 [1-3] 选择(默认回车退出)：" xray_choice
         case "$xray_choice" in
             1)
-               if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
-                  sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-REALITY%20(without%20being%20stolen)/config_server.jsonc"; then
+               # —— 方案B：下载到临时文件执行 ——
+               tmp="$(mktemp)"
+               if fetch_to_file "https://github.com/XTLS/Xray-install/raw/main/install-release.sh" "$tmp" && \
+                  bash "$tmp" install && \
+                  $SUDO curl -fsSL -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-REALITY%20(without%20being%20stolen)/config_server.jsonc"; then
                 echo -e "\e[32mXray 安装升级完成！\e[0m"
                 echo "以下是UUID："
                 echo -e "\e[34m$(xray uuid)\e[0m"
@@ -973,23 +1033,36 @@ install_xray_reality() {
                 echo -e "\e[34m$PRIVATE_KEY\e[0m"                
                 echo "以下是ShortIds："                
                 echo -e "\e[34m$(openssl rand -hex 8)\e[0m"
-                else
-                echo -e "\e[31mXray 安装升级失败！\e[0m"
+                # 安装后自检
+                xray -version || { echo -e "\e[31mxray 不可用。\e[0m"; rm -f "$tmp"; read -n1 -s -r -p "按任意键返回..."; echo; return; }
+                if ! xray -test -config /usr/local/etc/xray/config.json; then
+                    $SUDO sed -E -i 's#//.*$##' /usr/local/etc/xray/config.json
+                    xray -test -config /usr/local/etc/xray/config.json || {
+                        echo -e "\e[31m配置语法检查失败，请手动修正 /usr/local/etc/xray/config.json。\e[0m"
+                        rm -f "$tmp"
+                        read -n 1 -s -r -p "按任意键返回..."; echo; return;
+                    }
                 fi
-                read -n 1 -s -r -p "按任意键返回..."
-                echo
-                ;;
+                $SUDO systemctl enable --now xray
+                systemctl status xray --no-pager || true
+               else
+                echo -e "\e[31mXray 安装升级失败！\e[0m"
+               fi
+               rm -f "$tmp"
+               read -n 1 -s -r -p "按任意键返回..."
+               echo
+               ;;
             2)
                 echo -e "\e[33m提示：将UUID、目标网站及私钥填入配置文件中，ShortIds非必须。\e[0m"
                 read -n 1 -s -r -p "按任意键继续..."                                
                 if ! command -v nano >/dev/null 2>&1; then
-                sudo apt update >/dev/null 2>&1 && sudo apt install -y nano >/dev/null 2>&1
+                $SUDO apt update >/dev/null 2>&1 && $SUDO apt install -y nano >/dev/null 2>&1
                 fi
                 if ! command -v nano >/dev/null 2>&1; then
                 echo -e "\e[31m错误：无法安装或找到 nano！\e[0m" >&2
                 exit 1
                 fi
-                sudo nano /usr/local/etc/xray/config.json
+                $SUDO nano /usr/local/etc/xray/config.json
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
@@ -1028,7 +1101,7 @@ install_xray_reality() {
                     fi
 }
                 while true; do
-                    sudo -H systemctl restart xray 2>/dev/null
+                    $SUDO -H systemctl restart xray 2>/dev/null
                     sleep 2
                     if ! systemctl is-active --quiet xray; then
                        echo -e "\e[31m未能启动 xray 服务，请检查日志。\e[0m"
@@ -1082,7 +1155,7 @@ install_hysteria2() {
         case "$hysteria_choice" in
             1)
                 if bash <(curl -fsSL https://get.hy2.sh/) && \
-                sudo systemctl enable --now hysteria-server.service; then
+                $SUDO systemctl enable --now hysteria-server.service; then
                     sysctl -w net.core.rmem_max=16777216 || true
                     sysctl -w net.core.wmem_max=16777216 || true
                     echo -e "\e[32mhysteria2 安装升级完成！\e[0m"
@@ -1096,13 +1169,13 @@ install_hysteria2() {
                 echo -e "\e[33m提示：将域名填入配置文件中。\e[0m"
                 read -n 1 -s -r -p "按任意键继续..."                                                
                 if ! command -v nano >/dev/null 2>&1; then
-                sudo apt update >/dev/null 2>&1 && sudo apt install -y nano >/dev/null 2>&1
+                $SUDO apt update >/dev/null 2>&1 && $SUDO apt install -y nano >/dev/null 2>&1
                 fi
                 if ! command -v nano >/dev/null 2>&1; then
                 echo -e "\e[31m错误：无法安装或找到 nano！\e[0m" >&2
                 exit 1
                 fi
-                sudo nano /etc/hysteria/config.yaml
+                $SUDO nano /etc/hysteria/config.yaml
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
@@ -1132,11 +1205,11 @@ install_hysteria2() {
                     exit 1
                 fi
                 while true; do
-                    sudo systemctl restart hysteria-server.service
+                    $SUDO systemctl restart hysteria-server.service
                     sleep 2
                     if ! systemctl is-active --quiet hysteria-server.service; then
                         echo -e "\e[31m未能启动 hysteria 服务，请检查日志。\e[0m"
-                        sudo systemctl status hysteria-server.service --no-pager
+                        $SUDO systemctl status hysteria-server.service --no-pager
                         break
                     else
                         echo -e "\e[32mhysteria已启动！\e[0m"
@@ -1233,7 +1306,7 @@ install_sing-box() {
         case "$singbox_choice" in
             1)
                if bash <(curl -fsSL https://sing-box.app/deb-install.sh) && \
-                  sudo curl -L -o /etc/sing-box/config.json "https://raw.githubusercontent.com/sezhai/VPS-Script/refs/heads/main/extras/sing-box/config.json"; then
+                  $SUDO curl -L -o /etc/sing-box/config.json "https://raw.githubusercontent.com/sezhai/VPS-Script/refs/heads/main/extras/sing-box/config.json"; then
                    echo -e "\e[32msing-box 安装升级成功！\e[0m"
                 echo "以下是UUID："
                 echo -e "\e[34m$(sing-box generate uuid)\e[0m"
@@ -1254,19 +1327,19 @@ install_sing-box() {
                 echo -e "\e[33m提示：根据提示修改配置文件。\e[0m"
                 read -n 1 -s -r -p "按任意键继续..."                                                
                 if ! command -v nano >/dev/null 2>&1; then
-                sudo apt update >/dev/null 2>&1 && sudo apt install -y nano >/dev/null 2>&1
+                $SUDO apt update >/dev/null 2>&1 && $SUDO apt install -y nano >/dev/null 2>&1
                 fi
                 if ! command -v nano >/dev/null 2>&1; then
                 echo -e "\e[31m无法安装或找到 nano。\e[0m" >&2
                 exit 1
                 fi
-                sudo nano /etc/sing-box/config.json
+                $SUDO nano /etc/sing-box/config.json
                 read -n 1 -s -r -p "按任意键返回..."
                 echo
                 ;;
             3)
                 CONFIG_PATH="/etc/sing-box/config.json"
-                sudo systemctl restart sing-box
+                $SUDO systemctl restart sing-box
                 sleep 2
                 if ! systemctl is-active --quiet sing-box; then
                     echo -e "\e[31m未能启动 sing-box 服务，请检查日志。\e[0m"
@@ -1392,7 +1465,7 @@ install_1panel() {
         read -p "请输入数字 [1-5] 选择 (默认回车退出)：" panel_choice
         case "$panel_choice" in
             1)
-                if curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh && sudo bash quick_start.sh; then
+                if curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh && $SUDO bash quick_start.sh; then
                 echo -e "\e[32m1Panel 安装完成！\e[0m"
                 else
                 echo -e "\e[31m1Panel 安装失败！\e[0m"
@@ -1406,7 +1479,7 @@ install_1panel() {
                 echo
                 ;;
             3)
-                if sudo apt install ufw; then
+                if $SUDO apt install ufw; then
                 echo -e "\e[32mufw 安装完成！\e[0m"
                 else
                 echo -e "\e[31mufw 安装失败！\e[0m"
@@ -1415,7 +1488,7 @@ install_1panel() {
                 echo
                 ;;
             4)
-                if sudo apt remove -y ufw && sudo apt purge -y ufw && sudo apt autoremove -y; then
+                if $SUDO apt remove -y ufw && $SUDO apt purge -y ufw && $SUDO apt autoremove -y; then
                 echo -e "\e[32mufw 卸载完成。\e[0m"
                 else
                 echo -e "\e[31mufw 卸载失败！\e[0m"
@@ -1424,10 +1497,10 @@ install_1panel() {
                 echo
                 ;;
             5)
-                if sudo systemctl stop 1panel && sudo 1pctl uninstall && sudo rm -rf /var/lib/1panel /etc/1panel /usr/local/bin/1pctl && sudo journalctl --vacuum-time=3d &&
-                    sudo systemctl stop docker && sudo apt-get purge -y docker-ce docker-ce-cli containerd.io && \
-                    sudo find / \( -name "1panel*" -or -name "docker*" -or -name "containerd*" -or -name "compose*" \) -exec rm -rf {} + && \
-                    sudo groupdel docker; then
+                if $SUDO systemctl stop 1panel && $SUDO 1pctl uninstall && $SUDO rm -rf /var/lib/1panel /etc/1panel /usr/local/bin/1pctl && $SUDO journalctl --vacuum-time=3d &&
+                    $SUDO systemctl stop docker && $SUDO apt-get purge -y docker-ce docker-ce-cli containerd.io && \
+                    $SUDO find / \( -name "1panel*" -or -name "docker*" -or -name "containerd*" -or -name "compose*" \) -exec rm -rf {} + && \
+                    $SUDO groupdel docker; then
                 echo -e "\e[32m1Panel 卸载完成。\e[0m"
                 fi
                 read -n 1 -s -r -p "按任意键返回..."
