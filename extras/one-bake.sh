@@ -964,8 +964,8 @@ install_xray_reality() {
                 echo -e "\e[34m$(xray uuid)\e[0m"
                 echo "以下是私钥："
                 keys=$(xray x25519)
-                export PRIVATE_KEY=$(echo "$keys" | head -n 1 | awk '{print $3}' | sed 's/^-//')
-                export PUBLIC_KEY=$(echo "$keys" | tail -n 1 | awk '{print $3}' | sed 's/^-//')
+                export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
+                export PUBLIC_KEY=$(echo "$keys" | awk '/PublicKey/  {print $2}')
                 echo -e "\e[34m$PRIVATE_KEY\e[0m"                
                 echo "以下是ShortIds："                
                 echo -e "\e[34m$(openssl rand -hex 8)\e[0m"
