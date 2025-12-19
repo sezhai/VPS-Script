@@ -685,7 +685,7 @@ install_package() {
                             echo -e "\e[31mdocker 安装失败！\e[0m"
                         fi
                          ;;
-                    2) if sudo apt remove -y docker; then
+                    2) if sudo systemctl stop docker docker.socket && sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras && sudo apt-get autoremove -y && sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker /var/run/docker.sock ~/.docker; then
                             echo -e "\e[32mdocker 卸载完成！\e[0m"
                          else
                             echo -e "\e[31mdocker 卸载失败！\e[0m"
