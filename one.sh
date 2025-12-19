@@ -679,7 +679,7 @@ install_package() {
                 echo "2) 卸载"
                 read -p "请选择操作 (默认回车退出)：" action
                 case "$action" in
-                    1) if curl -sSL https://get.docker.com/ | sh; then
+                    1) if sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
                             echo -e "\e[32mdocker 安装完成！\e[0m"
                         else
                             echo -e "\e[31mdocker 安装失败！\e[0m"
