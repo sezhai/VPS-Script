@@ -668,7 +668,7 @@ install_xray_tls() {
                 if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
                    sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VMess-Websocket-TLS/config_server.jsonc"; then
                     log_success "Xray 安装升级完成！"
-                    echo "UUID: ${BLUE}$(xray uuid)${PLAIN}"
+                    echo -e "UUID: ${BLUE}$(xray uuid)${PLAIN}"
                 else
                     log_error "Xray 安装升级失败！"
                 fi
@@ -690,7 +690,6 @@ install_xray_tls() {
                     systemctl status xray --no-pager
                 else
                     log_success "xray已启动！"
-                    # 简化提取逻辑，保持原有功能
                     extract_field() { grep -aPo "\"$1\":\s*$2" "$CONFIG_PATH" | head -n 1 | sed -E "s/\"$1\":\s*//;s/^\"//;s/\"$//"; }
                     extract_list_field() { grep -aPoz "\"$1\":\s*\[\s*\{[^}]*\}\s*\]" "$CONFIG_PATH" | grep -aPo "\"$2\":\s*\"[^\"]*\"" | head -n 1 | sed -E "s/\"$2\":\s*\"([^\"]*)\"/\1/"; }
                     
@@ -762,7 +761,6 @@ install_xray_reality() {
                     systemctl status xray --no-pager
                 else
                     log_success "xray已启动！"
-                    # 辅助函数
                     extract_field() { grep -aPo "\"$1\":\s*$2" "$CONFIG_PATH" | head -n 1 | sed -E "s/\"$1\":\s*//;s/^\"//;s/\"$//"; }
                     extract_server_name() { grep -A 5 '"serverNames"' "$CONFIG_PATH" | grep -o '"[^"]*"' | head -n 2 | tail -n 1 | sed 's/"//g'; }
                     extract_list_field() {
@@ -784,7 +782,6 @@ install_xray_reality() {
                     PORT=${PORT:-"443"}
                     FLOW=$(extract_field "flow" "\"[^\"]*\"")
                     SID=${SHORT_IDS:-""}
-                    # 注意：PBK 无法从 config 直接读取，除非写入了文件或者用户提供，这里保留原逻辑，但 PBK 变量可能为空
                     PBK=${PUBLIC_KEY} 
                     
                     vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray"
