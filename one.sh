@@ -745,8 +745,7 @@ install_xray_reality() {
                          export PUBLIC_KEY=$(echo "$keys" | awk '/Password/ {print $2}')
                     fi
 
-                    echo -e "私钥: ${BLUE}$PRIVATE_KEY${PLAIN}"
-                    echo -e "公钥 (PBK): ${BLUE}$PUBLIC_KEY${PLAIN}"
+                    echo -e "PrivateKey: ${BLUE}$PRIVATE_KEY${PLAIN}"
                     echo -e "ShortIds: ${BLUE}$(openssl rand -hex 8)${PLAIN}"
                 else
                     log_error "Xray 安装升级失败！"
@@ -754,7 +753,7 @@ install_xray_reality() {
                 press_any_key
                 ;;
             2)
-                echo -e "${YELLOW}提示：将UUID、目标网站及私钥填入配置文件中，ShortIds非必须。${PLAIN}"
+                echo -e "${YELLOW}提示：将UUID、目标网站及PrivateKey填入配置文件中，ShortIds非必须。${PLAIN}"
                 read -n 1 -s -r -p "按任意键继续..."
                 command -v nano >/dev/null 2>&1 || sudo apt install -y nano
                 sudo nano /usr/local/etc/xray/config.json
@@ -939,22 +938,34 @@ install_sing_box() {
         read -p "请输入数字 [1-4] 选择 (默认回车退出)：" s_choice
         case "$s_choice" in
             1)
+                # 安装逻辑
                 if bash <(curl -fsSL https://sing-box.app/deb-install.sh) && \
                    sudo curl -L -o /etc/sing-box/config.json "https://raw.githubusercontent.com/sezhai/VPS-Script/refs/heads/main/extras/sing-box/config.json"; then
                     log_success "sing-box 安装升级成功！"
-                    echo -e "UUID: ${BLUE}$(sing-box generate uuid)${PLAIN}"
+                    
+                    # 生成 UUID
+                    UUID=$(sing-box generate uuid)
+                    echo -e "UUID: ${BLUE}$UUID${PLAIN}"
+                    
+                    # 生成 Reality 密钥对
                     keys=$(sing-box generate reality-keypair)
-                    export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
-                    export PUBLIC_KEY=$(echo "$keys" | awk '/PublicKey/  {print $2}')
+                    PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
+                    PUBLIC_KEY=$(echo "$keys" | awk '/PublicKey/  {print $2}')
+                    
+                    # === 关键修改：保存公钥到文件，因为 sing-box 无法反推 ===
+                    echo "$PUBLIC_KEY" > /etc/sing-box/public.key
                     echo -e "PrivateKey: ${BLUE}$PRIVATE_KEY${PLAIN}"
-                    echo -e "ShortIds: ${BLUE}$(sing-box generate rand 8 --hex)${PLAIN}"
+                    
+                    # 生成 ShortID
+                    SHORT_ID=$(sing-box generate rand 8 --hex)
+                    echo -e "ShortIds: ${BLUE}$SHORT_ID${PLAIN}"
                 else
                     log_error "sing-box 安装升级失败！"
                 fi
                 press_any_key
                 ;;
             2)
-                echo -e "${YELLOW}提示：根据提示修改配置文件。${PLAIN}"
+                echo -e "${YELLOW}提示：请根据安装时生成的 UUID 和 PrivateKey 修改配置文件。${PLAIN}"
                 read -n 1 -s -r -p "按任意键继续..."
                 command -v nano >/dev/null 2>&1 || sudo apt install -y nano
                 sudo nano /etc/sing-box/config.json
@@ -970,45 +981,66 @@ install_sing_box() {
                 else
                     log_success "sing-box已启动！"
                     
+                    # 获取 IP
                     ip=$(get_public_ip)
                     if [[ "$ip" =~ : ]]; then ip_for_url="[$ip]"; else ip_for_url="$ip"; fi
                     
+                    # 辅助函数：URL编码
                     urlencode() {
                         local s="$1" ch; for ((i=0; i<${#s}; i++)); do ch="${s:i:1}"; case "$ch" in [a-zA-Z0-9.~_-]) printf '%s' "$ch" ;; *) printf '%%%02X' "'$ch" ;; esac; done
                     }
                     
+                    # === 关键修改：获取公钥 (PBK) ===
+                    # 优先从文件读取
+                    if [ -f "/etc/sing-box/public.key" ]; then
+                        PBK=$(cat /etc/sing-box/public.key)
+                    else
+                        # 如果文件不存在（旧版本安装），尝试使用内存变量，否则留空
+                        PBK=${PUBLIC_KEY}
+                        echo -e "${YELLOW}警告：未找到公钥文件，链接可能不完整。请确认是否已执行安装步骤。${PLAIN}"
+                    fi
+
+                    # --- VMess 处理 ---
                     if grep -q '"tag":\s*"vmess"' "$CONFIG_PATH"; then
-                        # 简化了grep逻辑以提高可读性，保留原功能
                         vmess_uuid=$(grep -A 20 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"uuid":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
                         vmess_port=$(grep -A 5 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
                         vmess_path=$(grep -A 30 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"path":\s*"[^"]*"' | cut -d'"' -f4)
                         vmess_host=$(grep -A 30 '"tag":\s*"vmess"' "$CONFIG_PATH" | grep -o '"server_name":\s*"[^"]*"' | cut -d'"' -f4)
+                        
                         if [[ -n "$vmess_uuid" && -n "$vmess_port" ]]; then
-                            vmess_json='{"v":"2","ps":"vmess","add":"'$ip'","port":"'$vmess_port'","id":"'$vmess_uuid'","aid":"0","scy":"auto","net":"ws","type":"none","host":"'$vmess_host'","path":"'$vmess_path'","tls":"tls","sni":"'$vmess_host'","alpn":"http/1.1","fp":"chrome"}'
+                            vmess_json='{"v":"2","ps":"sing-box-vmess","add":"'$ip'","port":"'$vmess_port'","id":"'$vmess_uuid'","aid":"0","scy":"auto","net":"ws","type":"none","host":"'$vmess_host'","path":"'$vmess_path'","tls":"tls","sni":"'$vmess_host'","alpn":"http/1.1","fp":"chrome"}'
                             echo "vmess 链接如下："
                             echo -e "${BLUE}vmess://$(echo -n "$vmess_json" | base64 -w0)${PLAIN}"
                         fi
                     fi
                     
+                    # --- Reality 处理 ---
                     if grep -q '"tag":\s*"reality"' "$CONFIG_PATH"; then
                         vless_uuid=$(grep -A 20 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"uuid":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
                         vless_port=$(grep -A 5 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
                         vless_sni=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH" | grep -o '"server_name":\s*"[^"]*"' | head -1 | cut -d'"' -f4)
                         vless_sid=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH" | sed -n '/"short_id"/,/]/p' | grep -o '"[a-fA-F0-9]*"' | head -1 | tr -d '"')
+                        
                         if [[ -n "$vless_uuid" && -n "$vless_port" ]]; then
-                             vless_link="vless://$vless_uuid@$ip_for_url:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$PUBLIC_KEY&sid=$vless_sid&type=tcp&headerType=none#reality"
+                             # 使用获取到的 PBK
+                             vless_link="vless://$vless_uuid@$ip_for_url:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$PBK&sid=$vless_sid&type=tcp&headerType=none#sing-box-reality"
                              echo "reality 链接如下："
                              echo -e "${BLUE}$vless_link${PLAIN}"
                         fi
                     fi
                     
+                    # --- Hysteria2 处理 ---
                     if grep -q '"tag":\s*"hysteria2"' "$CONFIG_PATH"; then
                         h2_pass=$(grep -A 20 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"password":\s*"[^"]*"' | cut -d'"' -f4)
                         h2_port=$(grep -A 5 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"listen_port":\s*[0-9]*' | cut -d':' -f2 | tr -d ' ,')
                         cert_path=$(grep -A 30 '"tag":\s*"hysteria2"' "$CONFIG_PATH" | grep -o '"certificate_path":\s*"[^"]*"' | cut -d'"' -f4)
+                        
                         if [[ -n "$h2_pass" && -n "$h2_port" && -f "$cert_path" ]]; then
                             h2_domain=$(get_domain_from_cert "$cert_path")
-                            [[ -n "$h2_domain" ]] && echo -e "hysteria2 链接如下：\n${BLUE}hysteria2://$(urlencode "$h2_pass")@$ip_for_url:$h2_port?sni=$h2_domain&insecure=0#hysteria2${PLAIN}"
+                            if [[ -n "$h2_domain" ]]; then
+                                echo "hysteria2 链接如下："
+                                echo -e "${BLUE}hysteria2://$(urlencode "$h2_pass")@$ip_for_url:$h2_port?sni=$h2_domain&insecure=0#sing-box-hy2${PLAIN}"
+                            fi
                         fi
                     fi
                 fi
