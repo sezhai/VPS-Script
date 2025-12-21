@@ -91,7 +91,6 @@ view_vps_info() {
     echo "-------------"
     echo -e "${BLUE}CPU架构:${PLAIN} ${GREEN}$(uname -m)${PLAIN}"
     
-    # 修复：使用 /proc/cpuinfo 获取型号，避免 lscpu 格式差异导致的换行问题
     local cpu_model=$(grep -m1 'model name' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
     # 如果 cpuinfo 获取失败，尝试回退到 lscpu，并只取第一行
     if [ -z "$cpu_model" ]; then
@@ -101,7 +100,6 @@ view_vps_info() {
     
     echo -e "${BLUE}CPU核心数:${PLAIN} ${GREEN}$(nproc)${PLAIN}"
     
-    # 修复：优先从 /proc/cpuinfo 获取频率，若为空则显示“未知”
     local cpu_mhz=$(grep -m1 'cpu MHz' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
     if [ -z "$cpu_mhz" ]; then
          cpu_mhz=$(lscpu | grep 'CPU MHz' | awk -F: '{print $2}' | xargs)
@@ -119,7 +117,6 @@ view_vps_info() {
     local swap_info=$(free -m | awk '/Swap:/ {total=$2; used=$3; if (total > 0) printf "%.0fMB/%.0fMB (%.0f%%)", used, total, used*100/total; else print "数据不可用" }')
     echo -e "${BLUE}虚拟内存:${PLAIN} ${GREEN}$swap_info${PLAIN}"
     
-    # 修复：这里之前少了一个 '}' 导致报错。改为使用 NR==2 更加稳健
     echo -e "${BLUE}硬盘占用:${PLAIN} ${GREEN}$(df -h / | awk 'NR==2 {print $3 "/" $2 " (" $5 ")"}') ${PLAIN}"
     
     echo "-------------"
@@ -742,7 +739,7 @@ install_xray_reality() {
                     keys=$(xray x25519)
                     export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
                     export PUBLIC_KEY=$(echo "$keys" | awk '/Password/  {print $2}')
-                    echo -e "私钥: ${BLUE}$PRIVATE_KEY${PLAIN}"
+                    echo -e "PrivateKey: ${BLUE}$PRIVATE_KEY${PLAIN}"
                     echo -e "ShortIds: ${BLUE}$(openssl rand -hex 8)${PLAIN}"
                 else
                     log_error "Xray 安装升级失败！"
@@ -750,7 +747,7 @@ install_xray_reality() {
                 press_any_key
                 ;;
             2)
-                echo -e "${YELLOW}提示：将UUID、目标网站及私钥填入配置文件中，ShortIds非必须。${PLAIN}"
+                echo -e "${YELLOW}提示：将UUID、目标网站及PrivateKey填入配置文件中，ShortIds非必须。${PLAIN}"
                 read -n 1 -s -r -p "按任意键继续..."
                 command -v nano >/dev/null 2>&1 || sudo apt install -y nano
                 sudo nano /usr/local/etc/xray/config.json
@@ -922,7 +919,7 @@ install_sing_box() {
                     keys=$(sing-box generate reality-keypair)
                     export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
                     export PUBLIC_KEY=$(echo "$keys" | awk '/PublicKey/  {print $2}')
-                    echo -e "私钥: ${BLUE}$PRIVATE_KEY${PLAIN}"
+                    echo -e "PrivateKey: ${BLUE}$PRIVATE_KEY${PLAIN}"
                     echo -e "ShortIds: ${BLUE}$(sing-box generate rand 8 --hex)${PLAIN}"
                 else
                     log_error "sing-box 安装升级失败！"
