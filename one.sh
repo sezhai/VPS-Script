@@ -90,9 +90,25 @@ view_vps_info() {
     echo -e "${BLUE}Linux版本:${PLAIN} ${GREEN}$(uname -r)${PLAIN}"
     echo "-------------"
     echo -e "${BLUE}CPU架构:${PLAIN} ${GREEN}$(uname -m)${PLAIN}"
-    echo -e "${BLUE}CPU型号:${PLAIN} ${GREEN}$(lscpu | grep 'Model name' | sed 's/Model name:[ \t]*//')${PLAIN}"
+    
+    # 修复：使用 /proc/cpuinfo 获取型号，避免 lscpu 格式差异导致的换行问题
+    local cpu_model=$(grep -m1 'model name' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
+    # 如果 cpuinfo 获取失败，尝试回退到 lscpu，并只取第一行
+    if [ -z "$cpu_model" ]; then
+        cpu_model=$(lscpu | grep 'Model name' | sed 's/Model name:[ \t]*//' | head -n 1)
+    fi
+    echo -e "${BLUE}CPU型号:${PLAIN} ${GREEN}${cpu_model}${PLAIN}"
+    
     echo -e "${BLUE}CPU核心数:${PLAIN} ${GREEN}$(nproc)${PLAIN}"
-    echo -e "${BLUE}CPU频率:${PLAIN} ${GREEN}$(lscpu | grep 'CPU MHz' | awk -F: '{print $2}' | xargs) MHz${PLAIN}"
+    
+    # 修复：优先从 /proc/cpuinfo 获取频率，若为空则显示“未知”
+    local cpu_mhz=$(grep -m1 'cpu MHz' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
+    if [ -z "$cpu_mhz" ]; then
+         cpu_mhz=$(lscpu | grep 'CPU MHz' | awk -F: '{print $2}' | xargs)
+    fi
+    if [ -z "$cpu_mhz" ]; then cpu_mhz="未知"; fi
+    echo -e "${BLUE}CPU频率:${PLAIN} ${GREEN}${cpu_mhz} MHz${PLAIN}"
+    
     echo "-------------"
     echo -e "${BLUE}CPU占用:${PLAIN} ${GREEN}$(top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}')%${PLAIN}"
     echo -e "${BLUE}系统负载:${PLAIN} ${GREEN}$(awk '{print $1, $2, $3}' /proc/loadavg)${PLAIN}"
@@ -102,7 +118,9 @@ view_vps_info() {
     
     local swap_info=$(free -m | awk '/Swap:/ {total=$2; used=$3; if (total > 0) printf "%.0fMB/%.0fMB (%.0f%%)", used, total, used*100/total; else print "数据不可用" }')
     echo -e "${BLUE}虚拟内存:${PLAIN} ${GREEN}$swap_info${PLAIN}"
-    echo -e "${BLUE}硬盘占用:${PLAIN} ${GREEN}$(df -h / | awk '/\// {print $3 "/" $2 " (" $5 ")"')${PLAIN}"
+    
+    # 修复：这里之前少了一个 '}' 导致报错。改为使用 NR==2 更加稳健
+    echo -e "${BLUE}硬盘占用:${PLAIN} ${GREEN}$(df -h / | awk 'NR==2 {print $3 "/" $2 " (" $5 ")"}') ${PLAIN}"
     
     echo "-------------"
     local NET_INTERFACE=$(ip -o link show | awk -F': ' '$2 != "lo" {print $2}' | head -n 1)
