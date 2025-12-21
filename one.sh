@@ -736,9 +736,17 @@ install_xray_reality() {
                     log_success "Xray 安装升级完成！"
                     echo -e "UUID: ${BLUE}$(xray uuid)${PLAIN}"
                     keys=$(xray x25519)
+                    # 将生成的密钥对存入变量，方便当前会话直接使用
                     export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
-                    export PUBLIC_KEY=$(echo "$keys" | awk '/Password/  {print $2}')
-                    echo -e "PrivateKey: ${BLUE}$PRIVATE_KEY${PLAIN}"
+                    export PUBLIC_KEY=$(echo "$keys" | awk '/Public key/  {print $3}') # 注意：xray新版输出可能是 Public key: xxx
+                    
+                    # 兼容不同版本xray输出格式，如果上面没取到
+                    if [ -z "$PUBLIC_KEY" ]; then
+                         export PUBLIC_KEY=$(echo "$keys" | awk '/Password/ {print $2}')
+                    fi
+
+                    echo -e "私钥: ${BLUE}$PRIVATE_KEY${PLAIN}"
+                    echo -e "公钥 (PBK): ${BLUE}$PUBLIC_KEY${PLAIN}"
                     echo -e "ShortIds: ${BLUE}$(openssl rand -hex 8)${PLAIN}"
                 else
                     log_error "Xray 安装升级失败！"
@@ -746,7 +754,7 @@ install_xray_reality() {
                 press_any_key
                 ;;
             2)
-                echo -e "${YELLOW}提示：将UUID、目标网站及PrivateKey填入配置文件中，ShortIds非必须。${PLAIN}"
+                echo -e "${YELLOW}提示：将UUID、目标网站及私钥填入配置文件中，ShortIds非必须。${PLAIN}"
                 read -n 1 -s -r -p "按任意键继续..."
                 command -v nano >/dev/null 2>&1 || sudo apt install -y nano
                 sudo nano /usr/local/etc/xray/config.json
@@ -761,6 +769,8 @@ install_xray_reality() {
                     systemctl status xray --no-pager
                 else
                     log_success "xray已启动！"
+                    
+                    # 定义提取函数
                     extract_field() { grep -aPo "\"$1\":\s*$2" "$CONFIG_PATH" | head -n 1 | sed -E "s/\"$1\":\s*//;s/^\"//;s/\"$//"; }
                     extract_server_name() { grep -A 5 '"serverNames"' "$CONFIG_PATH" | grep -o '"[^"]*"' | head -n 2 | tail -n 1 | sed 's/"//g'; }
                     extract_list_field() {
@@ -773,18 +783,38 @@ install_xray_reality() {
                          fi
                     }
                     
+                    # 1. 基础信息提取
                     UUID=$(extract_list_field "clients" "id")
                     PORT=$(extract_field "port" "\d+")
                     SERVER_NAME=$(extract_server_name)
                     SHORT_IDS=$(extract_list_field "realitySettings" "shortIds")
+                    FLOW=$(extract_field "flow" "\"[^\"]*\"")
+                    
+                    # 2. 智能获取公钥 (PBK) 逻辑
+                    # 尝试从配置文件读取私钥
+                    EXISTING_PRIVATE_KEY=$(extract_field "privateKey" "\"[^\"]*\"")
+                    
+                    if [ -n "$EXISTING_PRIVATE_KEY" ]; then
+                        # 如果读到了私钥，利用 xray 计算出公钥
+                        # 注意：xray x25519 -i "私钥" 可以反推公钥
+                        PBK=$(echo "$EXISTING_PRIVATE_KEY" | xray x25519 -i | grep "Public key" | awk '{print $3}')
+                    else
+                        # 如果没读到私钥，尝试使用全局变量（仅在刚安装完未退出时有效）
+                        PBK=${PUBLIC_KEY}
+                    fi
+
+                    # 3. 默认值兜底
                     SNI=${SERVER_NAME:-"your.domain.net"}
                     ADDRESS=$(get_public_ip)
                     PORT=${PORT:-"443"}
-                    FLOW=$(extract_field "flow" "\"[^\"]*\"")
                     SID=${SHORT_IDS:-""}
-                    PBK=${PUBLIC_KEY} 
                     
-                    vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray"
+                    if [ -z "$PBK" ]; then
+                        echo -e "${YELLOW}警告: 无法从配置中提取私钥，也无缓存公钥，生成的链接可能缺少 pbk 参数。${PLAIN}"
+                    fi
+
+                    vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray-Reality"
+                    
                     echo "VLESS链接如下："
                     echo -e "${BLUE}$vless_uri${PLAIN}"
                 fi
