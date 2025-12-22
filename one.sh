@@ -783,24 +783,12 @@ install_xray_reality() {
                     PORT=$(extract_field "port" "\d+")
                     SERVER_NAME=$(extract_server_name)
                     SHORT_IDS=$(extract_list_field "realitySettings" "shortIds")
-                    FLOW=$(extract_field "flow" "\"[^\"]*\"")
-                    
-                    EXISTING_PRIVATE_KEY=$(extract_field "privateKey" "\"[^\"]*\"")
-                    
-                    if [ -n "$PUBLIC_KEY" ]; then
-                        PBK="$PUBLIC_KEY"
-                    else
-                        PBK=$(echo "$EXISTING_PRIVATE_KEY" | xray x25519 -i 2>/dev/null | grep -i "Public key" | awk '{print $NF}')
-fi
-                    
                     SNI=${SERVER_NAME:-"your.domain.net"}
                     ADDRESS=$(get_public_ip)
                     PORT=${PORT:-"443"}
+                    FLOW=$(extract_field "flow" "\"[^\"]*\"")
                     SID=${SHORT_IDS:-""}
-                    
-                    if [ -z "$PBK" ]; then
-                        echo -e "${YELLOW}警告: 无法从配置中提取私钥，也无缓存公钥，生成的链接可能缺少 pbk 参数。${PLAIN}"
-                    fi
+                    PBK=${PUBLIC_KEY} 
 
                     vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray-Reality"
                     
