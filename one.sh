@@ -62,7 +62,7 @@ get_public_ip() {
         ipv6=$(curl -s -6 --connect-timeout 5 https://icanhazip.com 2>/dev/null | tr -d '\n')
     fi
     if [[ -n "$ipv6" ]]; then
-        echo "$ipv6" # 可能需要根据上下文加 []
+        echo "$ipv6"
         return
     fi
     echo "127.0.0.1"
@@ -92,7 +92,6 @@ view_vps_info() {
     echo -e "${BLUE}CPU架构:${PLAIN} ${GREEN}$(uname -m)${PLAIN}"
     
     local cpu_model=$(grep -m1 'model name' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
-    # 如果 cpuinfo 获取失败，尝试回退到 lscpu，并只取第一行
     if [ -z "$cpu_model" ]; then
         cpu_model=$(lscpu | grep 'Model name' | sed 's/Model name:[ \t]*//' | head -n 1)
     fi
@@ -736,11 +735,9 @@ install_xray_reality() {
                     log_success "Xray 安装升级完成！"
                     echo -e "UUID: ${BLUE}$(xray uuid)${PLAIN}"
                     keys=$(xray x25519)
-                    # 将生成的密钥对存入变量，方便当前会话直接使用
                     export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
-                    export PUBLIC_KEY=$(echo "$keys" | awk '/Public key/  {print $3}') # 注意：xray新版输出可能是 Public key: xxx
+                    export PUBLIC_KEY=$(echo "$keys" | awk '/Public key/  {print $3}')
                     
-                    # 兼容不同版本xray输出格式，如果上面没取到
                     if [ -z "$PUBLIC_KEY" ]; then
                          export PUBLIC_KEY=$(echo "$keys" | awk '/Password/ {print $2}')
                     fi
@@ -769,7 +766,6 @@ install_xray_reality() {
                 else
                     log_success "xray已启动！"
                     
-                    # 定义提取函数
                     extract_field() { grep -aPo "\"$1\":\s*$2" "$CONFIG_PATH" | head -n 1 | sed -E "s/\"$1\":\s*//;s/^\"//;s/\"$//"; }
                     extract_server_name() { grep -A 5 '"serverNames"' "$CONFIG_PATH" | grep -o '"[^"]*"' | head -n 2 | tail -n 1 | sed 's/"//g'; }
                     extract_list_field() {
@@ -782,27 +778,20 @@ install_xray_reality() {
                          fi
                     }
                     
-                    # 1. 基础信息提取
                     UUID=$(extract_list_field "clients" "id")
                     PORT=$(extract_field "port" "\d+")
                     SERVER_NAME=$(extract_server_name)
                     SHORT_IDS=$(extract_list_field "realitySettings" "shortIds")
                     FLOW=$(extract_field "flow" "\"[^\"]*\"")
                     
-                    # 2. 智能获取公钥 (PBK) 逻辑
-                    # 尝试从配置文件读取私钥
                     EXISTING_PRIVATE_KEY=$(extract_field "privateKey" "\"[^\"]*\"")
                     
-                    if [ -n "$EXISTING_PRIVATE_KEY" ]; then
-                        # 如果读到了私钥，利用 xray 计算出公钥
-                        # 注意：xray x25519 -i "私钥" 可以反推公钥
-                        PBK=$(echo "$EXISTING_PRIVATE_KEY" | xray x25519 -i | grep "Public key" | awk '{print $3}')
+                    if PBK=${PUBLIC_KEY}
                     else
-                        # 如果没读到私钥，尝试使用全局变量（仅在刚安装完未退出时有效）
-                        PBK=${PUBLIC_KEY}
+                        [ -n "$EXISTING_PRIVATE_KEY" ]; then
+                        PBK=$(echo "$EXISTING_PRIVATE_KEY" | xray x25519 -i | grep "Public key" | awk '{print $3}')                        
                     fi
-
-                    # 3. 默认值兜底
+                    
                     SNI=${SERVER_NAME:-"your.domain.net"}
                     ADDRESS=$(get_public_ip)
                     PORT=${PORT:-"443"}
@@ -878,7 +867,6 @@ install_hysteria2() {
                     fi
                     
                     ip=$(get_public_ip)
-                    # 处理IPv6括号
                     if [[ "$ip" =~ : ]]; then ip="[$ip]"; fi
 
                     hysteria2_uri="hysteria2://$password@$ip:$port?sni=$domain&insecure=0#hysteria"
