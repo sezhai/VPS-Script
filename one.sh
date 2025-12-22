@@ -786,11 +786,11 @@ install_xray_reality() {
                     
                     EXISTING_PRIVATE_KEY=$(extract_field "privateKey" "\"[^\"]*\"")
                     
-                    if PBK=${PUBLIC_KEY}
+                    if [ -n "$PUBLIC_KEY" ]; then
+                        PBK="$PUBLIC_KEY"
                     else
-                        [ -n "$EXISTING_PRIVATE_KEY" ]; then
-                        PBK=$(echo "$EXISTING_PRIVATE_KEY" | xray x25519 -i | grep "Public key" | awk '{print $3}')                        
-                    fi
+                        PBK=$(echo "$EXISTING_PRIVATE_KEY" | xray x25519 -i 2>/dev/null | grep -i "Public key" | awk '{print $NF}')
+fi
                     
                     SNI=${SERVER_NAME:-"your.domain.net"}
                     ADDRESS=$(get_public_ip)
