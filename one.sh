@@ -13,6 +13,21 @@ BLUE='\033[1;34m'
 CYAN='\033[1;96m'
 PLAIN='\033[0m'
 
+# apt update 缓存：脚本运行期只执行一次 update，避免重复刷新源
+APT_UPDATED=0
+
+apt_update_once() {
+    if [[ $APT_UPDATED -eq 0 ]]; then
+        apt-get update -qq
+        APT_UPDATED=1
+    fi
+}
+
+apt_install_quiet() {
+    # 用于脚本化安装依赖：同功能，只是统一入口
+    apt_update_once && apt-get install -y -qq "$@"
+}
+
 # =============================================================================
 # 基础检查与工具函数
 # =============================================================================
@@ -48,7 +63,7 @@ print_header() {
 
 # 检查命令执行状态
 check_status() {
-    if [ $? -eq 0 ]; then
+    if [[ $? -eq 0 ]]; then
         log_success "$1 成功！"
     else
         log_error "$1 失败！$2"
@@ -59,11 +74,15 @@ check_status() {
 check_install() {
     local cmd="$1"
     local pkg="${2:-$1}"
-    
+
     if ! command -v "$cmd" &>/dev/null; then
         log_info "正在安装依赖: $pkg ..."
-        apt-get update -qq && apt-get install -y -qq "$pkg"
+        if ! apt_install_quiet "$pkg"; then
+            log_error "依赖安装失败：$pkg"
+            return 1
+        fi
     fi
+    return 0
 }
 
 # 检查防火墙冲突
@@ -79,9 +98,9 @@ check_firewall_conflict() {
         echo -e "${YELLOW}警告：建议使用 'firewall-cmd' 管理规则，直接操作 iptables 可能会冲突。${PLAIN}"
         conflict=1
     fi
-    
+
     if [[ $conflict -eq 1 ]]; then
-        read -p "是否仍要继续执行 iptables 操作？(y/n): " choice
+        read -r -p "是否仍要继续执行 iptables 操作？(y/n): " choice
         if [[ "$choice" != "y" ]]; then
             echo "已取消操作。"
             return 1
@@ -94,12 +113,12 @@ check_firewall_conflict() {
 edit_file() {
     local file_path="$1"
     local prompt_msg="${2:-提示：请修改配置文件}"
-    
+
     echo -e "${YELLOW}${prompt_msg}${PLAIN}"
     read -n 1 -s -r -p "按任意键开始编辑..."
     echo
-    
-    check_install nano
+
+    check_install nano || return 1
     nano "$file_path"
 }
 
@@ -107,28 +126,36 @@ edit_file() {
 restart_service() {
     local service_name="$1"
     local config_path="$2"
-    
+
     log_info "正在重启 $service_name 服务..."
-    systemctl restart "$service_name"
+
+    # 兼容 Debian/Ubuntu 常见服务名差异：sshd vs ssh
+    if ! systemctl list-unit-files --type=service --no-pager 2>/dev/null | awk '{print $1}' | grep -qx "${service_name}.service"; then
+        if [[ "$service_name" == "sshd" ]] && systemctl list-unit-files --type=service --no-pager 2>/dev/null | awk '{print $1}' | grep -qx "ssh.service"; then
+            service_name="ssh"
+        fi
+    fi
+
+    systemctl restart "$service_name" 2>/dev/null
     sleep 2
-    
+
     if systemctl is-active --quiet "$service_name"; then
         log_success "$service_name 已启动！"
         return 0
     else
         log_error "$service_name 启动失败！请检查日志或配置。"
-        systemctl status "$service_name" --no-pager
+        systemctl status "$service_name" --no-pager || true
         [[ -n "$config_path" ]] && log_error "配置文件路径: $config_path"
         return 1
     fi
 }
 
-# 获取 JSON 值
+# 获取 JSON 值（保持原 grep/regex 方式，不引入 jq）
 get_json_value() {
     local file="$1"
     local key="$2"
-    if [[ ! -f "$file" ]]; then echo ""; return; fi
-    grep -Po "\"$key\"\s*:\s*(\"\K[^\"]*|[\d]+)" "$file" | head -n 1 | sed 's/"//g'
+    [[ -f "$file" ]] || { echo ""; return; }
+    grep -m1 -Po "\"$key\"\s*:\s*(\"\K[^\"]*|[\d]+)" "$file" 2>/dev/null | sed 's/"//g'
 }
 
 # URL 编码函数
@@ -138,43 +165,49 @@ urlencode() {
     local encoded=""
     local pos c o
     for (( pos=0 ; pos<strlen ; pos++ )); do
-       c=${string:$pos:1}
-       case "$c" in
-          [-_.~a-zA-Z0-9] ) o="$c" ;;
-          * )               printf -v o '%%%02X' "'$c" ;;
-       esac
-       encoded+="$o"
+        c=${string:$pos:1}
+        case "$c" in
+            [-_.~a-zA-Z0-9] ) o="$c" ;;
+            * ) printf -v o '%%%02X' "'$c" ;;
+        esac
+        encoded+="$o"
     done
     echo "$encoded"
 }
 
 # 获取公网IP
 get_public_ip() {
+    check_install curl || return 1
+
     local ip=""
     local services=("https://api.ipify.org" "https://icanhazip.com")
+
     for service in "${services[@]}"; do
         ip=$(curl -s -4 --connect-timeout 5 "$service" 2>/dev/null | tr -d '\n')
         if [[ -n "$ip" && "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "$ip"
-            return
+            return 0
         fi
     done
+
     for service in "${services[@]}"; do
         ip=$(curl -s -6 --connect-timeout 5 "$service" 2>/dev/null | tr -d '\n')
         if [[ -n "$ip" ]]; then
             echo "$ip"
-            return
+            return 0
         fi
     done
+    return 1
 }
 
 # 从证书文件提取域名
 get_domain_from_cert() {
     local cert_file="$1"
-    if [[ -f "$cert_file" ]]; then
-        openssl x509 -in "$cert_file" -text -noout 2>/dev/null | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' || \
-        openssl x509 -in "$cert_file" -text -noout 2>/dev/null | grep -Po "CN=[^ ]*" | sed 's/CN=//'
-    fi
+    [[ -f "$cert_file" ]] || return 1
+    check_install openssl || return 1
+
+    openssl x509 -in "$cert_file" -text -noout 2>/dev/null | grep -Po "DNS:[^,]*" | head -n 1 | sed 's/DNS://' || \
+    openssl x509 -in "$cert_file" -text -noout 2>/dev/null | grep -Po "CN=[^ ]*" | sed 's/CN=//'
 }
 
 # =============================================================================
@@ -182,44 +215,55 @@ get_domain_from_cert() {
 # =============================================================================
 
 view_vps_info() {
-    clear
     print_header "VPS 系统信息"
-    
+
+    check_install curl || true
+
     echo -e "${BLUE}主机名:${PLAIN} ${GREEN}$(hostname)${PLAIN}"
-    echo -e "${BLUE}系统版本:${PLAIN} ${GREEN}$(lsb_release -ds 2>/dev/null || grep PRETTY_NAME /etc/os-release | cut -d '"' -f2)${PLAIN}"
+    echo -e "${BLUE}系统版本:${PLAIN} ${GREEN}$(lsb_release -ds 2>/dev/null || grep -m1 PRETTY_NAME /etc/os-release | cut -d '"' -f2)${PLAIN}"
     echo -e "${BLUE}Linux版本:${PLAIN} ${GREEN}$(uname -r)${PLAIN}"
     echo "-------------"
     echo -e "${BLUE}CPU架构:${PLAIN} ${GREEN}$(uname -m)${PLAIN}"
-    
-    local cpu_model=$(grep -m1 'model name' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
-    [ -z "$cpu_model" ] && cpu_model=$(lscpu | grep 'Model name' | sed 's/Model name:[ \t]*//' | head -n 1)
+
+    local cpu_model
+    cpu_model=$(grep -m1 'model name' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
+    [[ -z "$cpu_model" ]] && cpu_model=$(lscpu 2>/dev/null | grep -m1 'Model name' | sed 's/Model name:[ \t]*//')
     echo -e "${BLUE}CPU型号:${PLAIN} ${GREEN}${cpu_model}${PLAIN}"
     echo -e "${BLUE}CPU核心数:${PLAIN} ${GREEN}$(nproc)${PLAIN}"
-    
-    local cpu_mhz=$(grep -m1 'cpu MHz' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
-    [ -z "$cpu_mhz" ] && cpu_mhz=$(lscpu | grep 'CPU MHz' | awk -F: '{print $2}' | xargs)
-    [ -z "$cpu_mhz" ] && cpu_mhz="未知"
+
+    local cpu_mhz
+    cpu_mhz=$(grep -m1 'cpu MHz' /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^[ \t]*//')
+    [[ -z "$cpu_mhz" ]] && cpu_mhz=$(lscpu 2>/dev/null | grep -m1 'CPU MHz' | awk -F: '{print $2}' | xargs)
+    [[ -z "$cpu_mhz" ]] && cpu_mhz="未知"
     echo -e "${BLUE}CPU频率:${PLAIN} ${GREEN}${cpu_mhz} MHz${PLAIN}"
-    
+
     echo "-------------"
-    echo -e "${BLUE}CPU占用:${PLAIN} ${GREEN}$(top -bn1 | grep 'Cpu(s)' | awk '{print $2 + $4}')%${PLAIN}"
+    # top 输出受 locale 影响，固定为 C 以降低解析波动（不改变功能，只增强稳定性）
+    local cpu_usage
+    cpu_usage=$(LC_ALL=C top -bn1 2>/dev/null | awk -F'[, ]+' '/Cpu\(s\)/ {print $3 + $5; exit}')
+    [[ -z "$cpu_usage" ]] && cpu_usage=$(top -bn1 2>/dev/null | grep 'Cpu(s)' | awk '{print $2 + $4}')
+    echo -e "${BLUE}CPU占用:${PLAIN} ${GREEN}${cpu_usage:-0}%${PLAIN}"
     echo -e "${BLUE}系统负载:${PLAIN} ${GREEN}$(awk '{print $1, $2, $3}' /proc/loadavg)${PLAIN}"
-    
-    local mem_info=$(free -m | awk '/Mem:/ {total=$2; used=$3; if (total > 0) printf "%.2f/%.2f MB (%.2f%%)", used, total, used*100/total; else print "数据不可用"}')
+
+    local mem_info
+    mem_info=$(free -m | awk '/Mem:/ {total=$2; used=$3; if (total > 0) printf "%.2f/%.2f MB (%.2f%%)", used, total, used*100/total; else print "数据不可用"}')
     echo -e "${BLUE}物理内存:${PLAIN} ${GREEN}$mem_info ${PLAIN}"
-    
-    local swap_info=$(free -m | awk '/Swap:/ {total=$2; used=$3; if (total > 0) printf "%.0fMB/%.0fMB (%.0f%%)", used, total, used*100/total; else print "数据不可用" }')
+
+    local swap_info
+    swap_info=$(free -m | awk '/Swap:/ {total=$2; used=$3; if (total > 0) printf "%.0fMB/%.0fMB (%.0f%%)", used, total, used*100/total; else print "数据不可用" }')
     echo -e "${BLUE}虚拟内存:${PLAIN} ${GREEN}$swap_info${PLAIN}"
-    
+
     echo -e "${BLUE}硬盘占用:${PLAIN} ${GREEN}$(df -h / | awk 'NR==2 {print $3 "/" $2 " (" $5 ")"}') ${PLAIN}"
-    
+
     echo "-------------"
-    local NET_INTERFACE=$(ip -o link show | awk -F': ' '$2 != "lo" {print $2}' | head -n 1)
-    if [ -n "$NET_INTERFACE" ]; then
-        local RX_BYTES=$(cat /sys/class/net/$NET_INTERFACE/statistics/rx_bytes)
-        local TX_BYTES=$(cat /sys/class/net/$NET_INTERFACE/statistics/tx_bytes)
-        local RX_MB=$(awk "BEGIN {printf \"%.2f\", $RX_BYTES / 1024 / 1024}")
-        local TX_MB=$(awk "BEGIN {printf \"%.2f\", $TX_BYTES / 1024 / 1024}")
+    local NET_INTERFACE
+    NET_INTERFACE=$(ip -o link show | awk -F': ' '$2 != "lo" {print $2}' | head -n 1)
+    if [[ -n "$NET_INTERFACE" ]]; then
+        local RX_BYTES TX_BYTES RX_MB TX_MB
+        RX_BYTES=$(cat "/sys/class/net/$NET_INTERFACE/statistics/rx_bytes" 2>/dev/null || echo 0)
+        TX_BYTES=$(cat "/sys/class/net/$NET_INTERFACE/statistics/tx_bytes" 2>/dev/null || echo 0)
+        RX_MB=$(awk "BEGIN {printf \"%.2f\", $RX_BYTES / 1024 / 1024}")
+        TX_MB=$(awk "BEGIN {printf \"%.2f\", $TX_BYTES / 1024 / 1024}")
         echo -e "${BLUE}网络接口:${PLAIN} ${GREEN}$NET_INTERFACE${PLAIN}"
         echo -e "${BLUE}总接收:${PLAIN} ${GREEN}${RX_MB} MB${PLAIN}"
         echo -e "${BLUE}总发送:${PLAIN} ${GREEN}${TX_MB} MB${PLAIN}"
@@ -227,29 +271,30 @@ view_vps_info() {
         echo -e "${RED}未检测到有效的网络接口！${PLAIN}"
     fi
     echo "-------------"
-    
-    if [ -f /proc/sys/net/ipv4/tcp_congestion_control ]; then
-        echo -e "${BLUE}网络算法:${PLAIN} ${GREEN}$(sysctl net.ipv4.tcp_congestion_control | awk '{print $3}')${PLAIN}"
+
+    if [[ -f /proc/sys/net/ipv4/tcp_congestion_control ]]; then
+        echo -e "${BLUE}网络算法:${PLAIN} ${GREEN}$(sysctl net.ipv4.tcp_congestion_control 2>/dev/null | awk '{print $3}')${PLAIN}"
     else
         echo -e "${BLUE}网络算法:${PLAIN} ${RED}IPv4 未启用或不支持。${PLAIN}"
     fi
     echo "-------------"
-    
-    local ip_info=$(curl -s --connect-timeout 5 ipinfo.io 2>/dev/null)
-    local org=$(echo "$ip_info" | grep '"org":' | cut -d'"' -f4)
-    local city=$(echo "$ip_info" | grep '"city":' | cut -d'"' -f4)
-    local country=$(echo "$ip_info" | grep '"country":' | cut -d'"' -f4)
+
+    local ip_info org city country
+    ip_info=$(curl -s --connect-timeout 5 ipinfo.io 2>/dev/null || true)
+    org=$(echo "$ip_info" | grep '"org":' | cut -d'"' -f4)
+    city=$(echo "$ip_info" | grep '"city":' | cut -d'"' -f4)
+    country=$(echo "$ip_info" | grep '"country":' | cut -d'"' -f4)
 
     echo -e "${BLUE}运营商:${PLAIN} ${GREEN}${org:-未知}${PLAIN}"
     echo -e "${BLUE}IPv4地址:${PLAIN} ${GREEN}$(curl -s --connect-timeout 5 ipv4.icanhazip.com 2>/dev/null || echo "未检测到")${PLAIN}"
     echo -e "${BLUE}IPv6地址:${PLAIN} ${GREEN}$(ip -6 addr show scope global 2>/dev/null | awk '/inet6/ && !/temporary|tentative/ {print $2}' | cut -d'/' -f1 | head -n1 | ( grep . || echo "未检测到IPv6地址" ))${PLAIN}"
-    echo -e "${BLUE}DNS地址:${PLAIN} ${GREEN}$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}' | xargs | sed 's/ /, /g')${PLAIN}"
-    echo -e "${BLUE}地理位置:${PLAIN} ${GREEN}${city}, ${country}${PLAIN}"
+    echo -e "${BLUE}DNS地址:${PLAIN} ${GREEN}$(grep -E '^\s*nameserver' /etc/resolv.conf | awk '{print $2}' | xargs | sed 's/ /, /g')${PLAIN}"
+    echo -e "${BLUE}地理位置:${PLAIN} ${GREEN}${city:-未知}, ${country:-未知}${PLAIN}"
     echo -e "${BLUE}系统时间:${PLAIN} ${GREEN}$(timedatectl | grep 'Local time' | awk '{print $3, $4, $5}')${PLAIN}"
     echo "-------------"
     echo -e "${BLUE}运行时长:${PLAIN} ${GREEN}$(uptime -p | sed 's/up //')${PLAIN}"
     echo "-------------"
-    
+
     press_any_key
 }
 
@@ -267,8 +312,9 @@ calibrate_time() {
 
 update_system() {
     echo -e "\n[更新系统]"
-    if apt update && apt full-upgrade -y; then
-        apt autoremove -y && apt autoclean -y
+    apt_update_once
+    if apt-get full-upgrade -y; then
+        apt-get autoremove -y && apt-get autoclean -y
         log_success "系统更新完成！"
     else
         log_error "系统更新失败！请检查网络连接或源列表。"
@@ -278,8 +324,8 @@ update_system() {
 
 clean_system() {
     echo -e "\n[清理系统]"
-    apt autoremove --purge -y
-    apt clean -y && apt autoclean -y
+    apt-get autoremove --purge -y
+    apt-get clean -y && apt-get autoclean -y
     journalctl --rotate && journalctl --vacuum-time=10m
     journalctl --vacuum-size=50M
     log_success "系统清理完成！"
@@ -288,16 +334,16 @@ clean_system() {
 
 enable_bbr() {
     echo -e "\n[开启BBR]"
-    if sysctl net.ipv4.tcp_congestion_control | grep -q 'bbr'; then
+    if sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -q 'bbr'; then
         log_success "BBR已开启！"
     else
         if ! grep -q "net.core.default_qdisc = fq" /etc/sysctl.conf; then
-            echo "net.core.default_qdisc = fq" | tee -a /etc/sysctl.conf
+            echo "net.core.default_qdisc = fq" | tee -a /etc/sysctl.conf >/dev/null
         fi
         if ! grep -q "net.ipv4.tcp_congestion_control = bbr" /etc/sysctl.conf; then
-            echo "net.ipv4.tcp_congestion_control = bbr" | tee -a /etc/sysctl.conf
+            echo "net.ipv4.tcp_congestion_control = bbr" | tee -a /etc/sysctl.conf >/dev/null
         fi
-        if sysctl -p; then
+        if sysctl -p >/dev/null; then
             log_success "BBR已开启！"
         else
             log_error "BBR 开启失败！"
@@ -313,7 +359,7 @@ root_login() {
         echo "2) 修改配置"
         echo "3) 重启服务"
         echo "========================================="
-        read -p "请输入数字 [1-3] 选择 (默认回车退出)：" root_choice
+        read -r -p "请输入数字 [1-3] 选择 (默认回车退出)：" root_choice
         case "$root_choice" in
             1)
                 passwd root
@@ -336,13 +382,13 @@ root_login() {
 }
 
 user_sysinit() {
-    read -p "$(echo -e '\033[0;31m输入y继续（默认回车退出）:\033[0m ') " confirm
+    read -r -p "$(echo -e '\033[0;31m输入y继续（默认回车退出）:\033[0m ') " confirm
     if [[ "$confirm" != "y" ]]; then
         return 0
     fi
 
     echo "开始系统清理..."
-    
+
     log_info "清理后装应用文件..."
     local CLEANUP_PATHS=(
         "/usr/local/bin/xray" "/usr/local/bin/v2ray" "/usr/local/bin/v2ctl"
@@ -360,6 +406,7 @@ user_sysinit() {
         "/var/lib/1panel" "/var/log/xray" "/var/log/v2ray" "/var/log/sing-box"
         "/var/log/hysteria" "/var/log/nginx"
     )
+    local path
     for path in "${CLEANUP_PATHS[@]}"; do
         if [[ -e "$path" && "$path" != "/" && "$path" != "/usr" && "$path" != "/etc" ]]; then
             rm -rf "$path" 2>/dev/null && log_info "删除: $path"
@@ -373,6 +420,7 @@ user_sysinit() {
         "nezha-agent" "nezha-dashboard" "aria2" "filebrowser"
         "portainer" "docker" "containerd"
     )
+    local service
     for service in "${CLEANUP_SERVICES[@]}"; do
         systemctl stop "$service" 2>/dev/null || true
         systemctl disable "$service" 2>/dev/null || true
@@ -389,6 +437,7 @@ user_sysinit() {
         "caddy" "frps" "frpc" "1panel" "nezha" "aria2"
         "filebrowser" "portainer" "docker" "containerd"
     )
+    local pattern
     for pattern in "${KILL_PATTERNS[@]}"; do
         log_warn "正在终止匹配 '$pattern' 的进程..."
         pkill -f "$pattern" 2>/dev/null || true
@@ -396,14 +445,16 @@ user_sysinit() {
 
     log_info "删除后装APT包..."
     local REMOVE_PKGS=("docker.io" "docker-ce" "docker-compose" "containerd.io" "docker-compose-plugin")
+    local pkg
     for pkg in "${REMOVE_PKGS[@]}"; do
         if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
             log_info "删除APT包: $pkg"
-            apt remove --purge -y "$pkg" -qq 2>/dev/null || true
+            apt-get remove --purge -y -qq "$pkg" 2>/dev/null || true
         fi
     done
 
     log_info "清理用户目录..."
+    local home
     for home in /home/*/; do
         [[ -d "$home" ]] || continue
         rm -rf "${home}.config/1panel" "${home}.config/clash" "${home}.config/v2ray" \
@@ -412,15 +463,15 @@ user_sysinit() {
 
     log_info "清理缓存..."
     rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
-    apt autoclean 2>/dev/null || true
-    apt clean 2>/dev/null || true
+    apt-get autoclean 2>/dev/null || true
+    apt-get clean 2>/dev/null || true
 
     log_info "验证系统完整性..."
     dpkg --configure -a --force-confold 2>/dev/null || true
-    if ! apt update -qq 2>/dev/null; then
+    if ! apt_update_once 2>/dev/null; then
         log_info "尝试修复APT..."
-        apt install -f -y -qq 2>/dev/null || true
-        apt update -qq 2>/dev/null || true
+        apt-get install -f -y -qq 2>/dev/null || true
+        apt_update_once 2>/dev/null || true
     fi
 
     for service in systemd-resolved systemd-networkd networking; do
@@ -429,7 +480,7 @@ user_sysinit() {
     done
 
     log_success "系统初始化完成！"
-    read -p "$(echo -e '\033[0;31m输入y重启系统（默认回车退出）:\033[0m ') " reboot_choice
+    read -r -p "$(echo -e '\033[0;31m输入y重启系统（默认回车退出）:\033[0m ') " reboot_choice
     [[ "$reboot_choice" == "y" ]] && reboot
     press_any_key
 }
@@ -444,7 +495,7 @@ display_system_optimization_menu() {
         echo "5) ROOT登录"
         echo "6) 系统初始化"
         echo "========================================="
-        read -p "请输入数字 [1-6] 选择 (默认回车退出)：" root_choice
+        read -r -p "请输入数字 [1-6] 选择 (默认回车退出)：" root_choice
         case "$root_choice" in
             1) calibrate_time ;;
             2) update_system ;;
@@ -474,10 +525,10 @@ common_tools() {
         echo "7) 开放端口"
         echo "8) 网络测速"
         echo "========================================="
-        read -p "请输入数字 [1-8] 选择 (默认回车退出)：" root_choice
+        read -r -p "请输入数字 [1-8] 选择 (默认回车退出)：" root_choice
         case "$root_choice" in
             1)
-                read -p "请输入要查找的文件名: " filename
+                read -r -p "请输入要查找的文件名: " filename
                 if [[ -z "$filename" ]]; then
                     log_error "文件名不能为空。"
                 else
@@ -486,8 +537,8 @@ common_tools() {
                 press_any_key
                 ;;
             2)
-                read -p "请输入文件路径: " file_path
-                if [ ! -e "$file_path" ]; then
+                read -r -p "请输入文件路径: " file_path
+                if [[ ! -e "$file_path" ]]; then
                     log_error "错误: 文件或目录 '$file_path' 不存在。"
                 else
                     chmod 755 "$file_path"
@@ -497,10 +548,10 @@ common_tools() {
                 ;;
             3)
                 while true; do
-                    read -p "请输入要删除的文件或目录名（默认回车退出）: " filename
+                    read -r -p "请输入要删除的文件或目录名（默认回车退出）: " filename
                     [[ -z "$filename" ]] && break
                     mapfile -t files < <(find / \( -path /proc -o -path /sys -o -path /dev -o -path /run \) -prune -o -iname "*$filename*" -print 2>/dev/null)
-                    
+
                     if [[ ${#files[@]} -eq 0 ]]; then
                         log_error "未找到匹配的文件或目录。"
                         continue
@@ -509,9 +560,9 @@ common_tools() {
                     for i in "${!files[@]}"; do
                         echo "$((i+1)). ${files[$i]}"
                     done
-                    read -p "请输入要删除的编号（多选空格分隔）: " choices
+                    read -r -p "请输入要删除的编号（多选空格分隔）: " choices
                     [[ -z "$choices" ]] && { echo "取消操作。"; continue; }
-                    
+
                     IFS=' ' read -r -a choice_array <<< "$choices"
                     for choice in "${choice_array[@]}"; do
                         if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 && "$choice" -le ${#files[@]} ]]; then
@@ -520,7 +571,7 @@ common_tools() {
                                 log_error "拒绝删除系统关键目录: $file"
                                 continue
                             fi
-                            read -p "确定要删除 $file 吗？ (y/n): " confirm
+                            read -r -p "确定要删除 $file 吗？ (y/n): " confirm
                             if [[ "$confirm" == "y" ]]; then
                                 rm -rf "$file" && log_success "已删除: $file" || log_error "删除失败: $file"
                             else
@@ -539,13 +590,13 @@ common_tools() {
                 ;;
             5)
                 while true; do
-                    read -p "请输入要关闭的进程 PID: " pid
+                    read -r -p "请输入要关闭的进程 PID: " pid
                     if [[ "$pid" =~ ^[0-9]+$ ]]; then
                         if kill "$pid" 2>/dev/null; then
                             log_success "进程 $pid 已成功关闭！"
                         else
                             echo -e "${RED}无法正常关闭，是否强制关闭 (SIGKILL)？ (y/n)${PLAIN}"
-                            read -p "请选择: " choice
+                            read -r -p "请选择: " choice
                             if [[ "$choice" == "y" ]]; then
                                 kill -9 "$pid" 2>/dev/null && log_success "进程 $pid 已强制关闭！" || log_error "强制关闭失败。"
                             else
@@ -561,10 +612,9 @@ common_tools() {
                 ;;
             6)
                 echo -e "端口     类型    程序名               PID"
-                check_install netstat net-tools
                 if command -v ss &>/dev/null; then
                     ss -tulnp | awk 'NR>1 {
-                        split($5, a, ":"); 
+                        split($5, a, ":");
                         port = (a[2] != "" && a[2] != "*") ? a[2] : a[1];
                         if ($7 ~ /users:/) {
                             match($7, /\(\("([^"]+)",pid=([0-9]+)/, arr);
@@ -572,10 +622,11 @@ common_tools() {
                         } else {
                             prog = "-"; pid = "-";
                         }
-                        if (port != "" && port != "*") 
+                        if (port != "" && port != "*")
                             printf "%-8s %-7s %-20s %-6s\n", port, $1, prog, pid;
                     }'
                 else
+                    check_install netstat net-tools || { log_error "net-tools 安装失败"; press_any_key; continue; }
                     netstat -tulnp | awk 'NR>2 {
                         split($4, a, ":");
                         port = a[length(a)];
@@ -588,35 +639,37 @@ common_tools() {
                 press_any_key
                 ;;
             7)
-                check_install iptables
+                check_install iptables || { log_error "iptables 安装失败"; press_any_key; continue; }
                 while true; do
                     echo "1) TCP  2) UDP"
-                    read -p "请输入协议 [1-2]: " p_choice
+                    read -r -p "请输入协议 [1-2]: " p_choice
                     case "$p_choice" in
-                        1) protocol="tcp" ;; 2) protocol="udp" ;; *) log_error "无效选择"; break ;;
+                        1) protocol="tcp" ;;
+                        2) protocol="udp" ;;
+                        *) log_error "无效选择"; break ;;
                     esac
-                    read -p "请输入端口号: " port
-                    if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+                    read -r -p "请输入端口号: " port
+                    if ! [[ "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
                         log_error "无效端口号"
                         break
                     fi
-                    
-                    # 修复：防火墙冲突检测
+
                     check_firewall_conflict || break
-                    
+
                     iptables -A INPUT -p "$protocol" --dport "$port" -j ACCEPT
                     check_status "端口 $port ($protocol) 开放"
                     log_warn "注意：使用 iptables 命令开放的端口重启后会失效！"
                     log_info "当前开放端口列表 (iptables):"
-                    iptables -L INPUT -n --line-numbers | grep "$port"
+                    iptables -L INPUT -n --line-numbers | grep -F "$port" || true
                     break
                 done
                 press_any_key
                 ;;
             8)
+                check_install curl || { log_error "curl 安装失败"; press_any_key; continue; }
                 if ! command -v speedtest &>/dev/null; then
                     echo "正在安装 Ookla Speedtest..."
-                    apt-get remove -y speedtest-cli >/dev/null 2>&1
+                    apt-get remove -y speedtest-cli >/dev/null 2>&1 || true
                     curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | bash
                     apt-get install -y speedtest
                 fi
@@ -637,18 +690,19 @@ common_tools() {
 manage_package_menu() {
     local pkg_name=$1
     local pkg_display=$2
-    local install_cmd=${3} 
+    local install_cmd=${3}
     local remove_cmd=${4}
 
     echo "1) 安装"
     echo "2) 卸载"
-    read -p "请选择操作 (默认回车退出)：" action
+    read -r -p "请选择操作 (默认回车退出)：" action
     case "$action" in
         1)
             if [[ -n "$install_cmd" ]]; then
                 bash -c "$install_cmd"
             else
-                apt update && apt install -y "$pkg_name"
+                apt_update_once
+                apt-get install -y "$pkg_name"
             fi
             check_status "$pkg_display 安装"
             ;;
@@ -656,7 +710,7 @@ manage_package_menu() {
             if [[ -n "$remove_cmd" ]]; then
                 bash -c "$remove_cmd"
             else
-                apt remove -y "$pkg_name"
+                apt-get remove -y "$pkg_name"
             fi
             check_status "$pkg_display 卸载"
             ;;
@@ -679,10 +733,10 @@ install_package() {
         echo "8) htop"
         echo "9) docker"
         echo "========================================="
-        read -p "请输入数字 [1-9] 选择 (默认回车退出)：" opt_choice
+        read -r -p "请输入数字 [1-9] 选择 (默认回车退出)：" opt_choice
         case "$opt_choice" in
             1)
-                apt update
+                apt_update_once
                 check_status "apt 更新"
                 press_any_key
                 ;;
@@ -695,7 +749,7 @@ install_package() {
             8) manage_package_menu "htop" "htop" ;;
             9)
                 manage_package_menu "docker" "docker" \
-                    "curl -fsSL https://get.docker.com | bash || { echo 'Docker 安装失败'; exit 1; }" \
+                    "check_install curl && curl -fsSL https://get.docker.com | bash || { echo 'Docker 安装失败'; exit 1; }" \
                     "systemctl stop docker docker.socket && apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras && apt-get autoremove -y && rm -rf /var/lib/docker /var/lib/containerd /etc/docker"
                 ;;
             "") return ;;
@@ -717,19 +771,20 @@ apply_certificate() {
         echo "4) 安装证书"
         echo "5) 卸载脚本"
         echo "========================================="
-        read -p "请输入数字 [1-5] 选择 (默认回车退出)：" cert_choice
+        read -r -p "请输入数字 [1-5] 选择 (默认回车退出)：" cert_choice
         case "$cert_choice" in
             1)
-                read -p "请输入邮箱地址: " email
-                apt update
-                check_install cron
-                check_install socat
+                read -r -p "请输入邮箱地址: " email
+                apt_update_once
+                check_install cron || { press_any_key; continue; }
+                check_install socat || { press_any_key; continue; }
+                check_install curl || { press_any_key; continue; }
                 curl https://get.acme.sh | sh -s email="$email"
                 check_status "acme.sh 安装"
                 press_any_key
                 ;;
             2)
-                read -p "请输入域名: " domain
+                read -r -p "请输入域名: " domain
                 ~/.acme.sh/acme.sh --issue --standalone -d "$domain"
                 check_status "证书申请"
                 press_any_key
@@ -740,8 +795,8 @@ apply_certificate() {
                 press_any_key
                 ;;
             4)
-                read -p "请输入域名: " domain
-                read -p "请输入证书安装路径（默认: /path/to）: " install_path
+                read -r -p "请输入域名: " domain
+                read -r -p "请输入证书安装路径（默认: /path/to）: " install_path
                 install_path=${install_path:-/path/to}
                 mkdir -p "$install_path" && \
                 ~/.acme.sh/acme.sh --installcert -d "$domain" \
@@ -772,11 +827,12 @@ install_xray() {
         echo "2) VLESS-TCP-REALITY"
         echo "3) 卸载服务"
         echo "========================================="
-        read -p "请输入数字 [1-3] 选择 (默认回车退出)：" opt_choice
+        read -r -p "请输入数字 [1-3] 选择 (默认回车退出)：" opt_choice
         case "$opt_choice" in
             1) install_xray_tls ;;
             2) install_xray_reality ;;
             3)
+                check_install curl || { press_any_key; continue; }
                 bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ remove --purge
                 check_status "Xray 卸载"
                 press_any_key
@@ -794,9 +850,10 @@ install_xray_tls() {
         echo "2) 编辑配置"
         echo "3) 重启服务"
         echo "========================================="
-        read -p "请输入数字 [1-3] 选择功能 (默认回车退出)：" xray_choice
+        read -r -p "请输入数字 [1-3] 选择功能 (默认回车退出)：" xray_choice
         case "$xray_choice" in
             1)
+                check_install curl || { press_any_key; continue; }
                 if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh || { echo '下载失败'; exit 1; })" @ install && \
                    curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VMess-Websocket-TLS/config_server.jsonc"; then
                     log_success "Xray 安装升级完成！"
@@ -817,38 +874,37 @@ install_xray_tls() {
                     PORT=$(get_json_value "$CONFIG_PATH" "port")
                     WS_PATH=$(get_json_value "$CONFIG_PATH" "path")
                     TLS=$(get_json_value "$CONFIG_PATH" "security")
-                    CERT_PATH=$(grep -Po '"certificateFile"\s*:\s*"\K[^"]+' "$CONFIG_PATH" | head -n 1)
-                    
+                    CERT_PATH=$(grep -Po '"certificateFile"\s*:\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null | head -n 1)
+
                     if [[ -z "$CERT_PATH" ]]; then
                         log_error "未能找到证书路径。"
                         break
                     fi
-                    
+
                     DOMAIN=$(get_domain_from_cert "$CERT_PATH")
                     SNI=${DOMAIN:-"your.domain.net"}
                     HOST=${DOMAIN:-"your.domain.net"}
-                    ADDRESS=$(get_public_ip)
+                    ADDRESS=$(get_public_ip || true)
                     WS_PATH=${WS_PATH:-"/"}
                     TLS=${TLS:-"tls"}
                     PORT=${PORT:-"443"}
-                    
-                    if [[ -z "$ADDRESS" ]]; then ADDRESS="IP_ADDRESS"; fi
 
-                    # 生成标准 VMESS JSON
+                    [[ -z "$ADDRESS" ]] && ADDRESS="IP_ADDRESS"
+
                     vmess_json='{
                         "v": "2",
                         "ps": "VMESS-WS-TLS",
-                        "add": "'$ADDRESS'",
-                        "port": "'$PORT'",
-                        "id": "'$UUID'",
+                        "add": "'"$ADDRESS"'",
+                        "port": "'"$PORT"'",
+                        "id": "'"$UUID"'",
                         "aid": "0",
                         "scy": "auto",
                         "net": "ws",
                         "type": "none",
-                        "host": "'$HOST'",
-                        "path": "'$WS_PATH'",
-                        "tls": "'$TLS'",
-                        "sni": "'$SNI'",
+                        "host": "'"$HOST"'",
+                        "path": "'"$WS_PATH"'",
+                        "tls": "'"$TLS"'",
+                        "sni": "'"$SNI"'",
                         "alpn": ""
                     }'
                     vmess_uri="vmess://$(echo -n "$vmess_json" | base64 -w0)"
@@ -870,24 +926,27 @@ install_xray_reality() {
         echo "2) 编辑配置"
         echo "3) 重启服务"
         echo "========================================="
-        read -p "请输入数字 [1-3] 选择(默认回车退出)：" xray_choice
+        read -r -p "请输入数字 [1-3] 选择(默认回车退出)：" xray_choice
         case "$xray_choice" in
             1)
+                check_install curl || { press_any_key; continue; }
                 if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh || { echo '下载失败'; exit 1; })" @ install && \
                    curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-REALITY%20(without%20being%20stolen)/config_server.jsonc"; then
                     log_success "Xray 安装升级完成！"
                     echo -e "UUID: ${BLUE}$(xray uuid)${PLAIN}"
-                    
-                    local keys_output=$(xray x25519)
-                    local private_key=$(echo "$keys_output" | grep "Private key:" | awk '{print $3}')
-                    local public_key=$(echo "$keys_output" | grep "Public key:" | awk '{print $3}')
-                    
+
+                    local keys_output private_key public_key
+                    keys_output=$(xray x25519)
+                    private_key=$(echo "$keys_output" | grep "Private key:" | awk '{print $3}')
+                    public_key=$(echo "$keys_output" | grep "Public key:" | awk '{print $3}')
+
                     export PRIVATE_KEY="$private_key"
                     export PUBLIC_KEY="$public_key"
-                    
+
                     echo -e "PrivateKey: ${BLUE}$private_key${PLAIN}"
                     echo -e "PublicKey:  ${BLUE}$public_key${PLAIN}"
-                    echo -e "ShortIds:   ${BLUE}$(openssl rand -hex 8)${PLAIN}"
+                    check_install openssl || true
+                    echo -e "ShortIds:   ${BLUE}$(openssl rand -hex 8 2>/dev/null || echo "")${PLAIN}"
                 else
                     log_error "Xray 安装升级失败！"
                 fi
@@ -902,21 +961,21 @@ install_xray_reality() {
                 if restart_service "xray" "$CONFIG_PATH"; then
                     UUID=$(get_json_value "$CONFIG_PATH" "id")
                     PORT=$(get_json_value "$CONFIG_PATH" "port")
-                    SERVER_NAME=$(grep -Po '"serverNames"\s*:\s*\[\s*"\K[^"]+' "$CONFIG_PATH" | head -n 1)
-                    SHORT_IDS=$(grep -Po '"shortIds"\s*:\s*\[\s*"\K[^"]+' "$CONFIG_PATH" | head -n 1)
-                    
+                    SERVER_NAME=$(grep -Po '"serverNames"\s*:\s*\[\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null | head -n 1)
+                    SHORT_IDS=$(grep -Po '"shortIds"\s*:\s*\[\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null | head -n 1)
+
                     SNI=${SERVER_NAME:-"your.domain.net"}
-                    ADDRESS=$(get_public_ip)
+                    ADDRESS=$(get_public_ip || true)
                     PORT=${PORT:-"443"}
                     FLOW=$(get_json_value "$CONFIG_PATH" "flow")
                     SID=${SHORT_IDS:-""}
-                    
+
                     PBK=${PUBLIC_KEY}
                     if [[ -z "$PBK" ]]; then
                         PBK=$(get_json_value "$CONFIG_PATH" "publicKey")
                     fi
-                    
-                    if [[ -z "$ADDRESS" ]]; then ADDRESS="IP_ADDRESS"; fi
+
+                    [[ -z "$ADDRESS" ]] && ADDRESS="IP_ADDRESS"
 
                     vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray-Reality"
                     echo "VLESS链接如下："
@@ -946,9 +1005,10 @@ install_hysteria2() {
         echo "4) 端口跳跃"
         echo "5) 卸载服务"
         echo "========================================="
-        read -p "请输入数字 [1-5] 选择 (默认回车退出)：" h_choice
+        read -r -p "请输入数字 [1-5] 选择 (默认回车退出)：" h_choice
         case "$h_choice" in
             1)
+                check_install curl || { press_any_key; continue; }
                 if bash <(curl -fsSL https://get.hy2.sh/ || { echo '下载失败'; exit 1; }) && systemctl enable --now hysteria-server.service; then
                     sysctl -w net.core.rmem_max=16777216 || true
                     sysctl -w net.core.wmem_max=16777216 || true
@@ -964,19 +1024,19 @@ install_hysteria2() {
                 ;;
             3)
                 config_file="/etc/hysteria/config.yaml"
-                [ ! -f "$config_file" ] && { log_error "未能找到配置文件。"; continue; }
-                
+                [[ -f "$config_file" ]] || { log_error "未能找到配置文件。"; press_any_key; continue; }
+
                 if restart_service "hysteria-server.service" "$config_file"; then
                     port=$(grep "^listen:" "$config_file" | awk -F: '{print $3}' || echo "443")
                     password=$(grep "^  password:" "$config_file" | awk '{print $2}')
                     domain=$(grep "domains:" "$config_file" -A 1 | tail -n 1 | tr -d " -")
-                    
-                    if [ -z "$domain" ]; then
+
+                    if [[ -z "$domain" ]]; then
                         cert_path=$(grep "cert:" "$config_file" | awk '{print $2}' | tr -d '"')
-                        domain=$(get_domain_from_cert "$cert_path")
+                        domain=$(get_domain_from_cert "$cert_path" || true)
                     fi
-                    
-                    ip=$(get_public_ip)
+
+                    ip=$(get_public_ip || true)
                     if [[ -z "$ip" ]]; then
                         log_warn "未能获取公网IP，请自行替换链接中的 'IP_ADDRESS'。"
                         ip="IP_ADDRESS"
@@ -993,24 +1053,27 @@ install_hysteria2() {
             4)
                 default_redirect_port=443; default_start_port=60000; default_end_port=65535
                 config_file="/etc/hysteria/config.yaml"
-                redirect_port=$( [ -f "$config_file" ] && grep 'listen:' "$config_file" | awk -F':' '{print $NF}' )
+                redirect_port=$( [[ -f "$config_file" ]] && grep 'listen:' "$config_file" | awk -F':' '{print $NF}' )
                 [[ -z "$redirect_port" || ! "$redirect_port" =~ ^[0-9]+$ ]] && redirect_port="$default_redirect_port"
-                
-                read -p "请输入起始端口号 (默认 60000): " start_port
+
+                read -r -p "请输入起始端口号 (默认 60000): " start_port
                 [[ -z "$start_port" ]] && start_port="$default_start_port"
-                read -p "请输入结束端口号 (默认 65535): " end_port
+                read -r -p "请输入结束端口号 (默认 65535): " end_port
                 [[ -z "$end_port" ]] && end_port="$default_end_port"
-                
-                interfaces=($(ip -o link | awk -F': ' '{if ($2 != "lo") print $2}'))
-                [[ ${#interfaces[@]} -eq 0 ]] && { log_error "未找到网络接口"; exit 1; }
+
+                mapfile -t interfaces < <(ip -o link | awk -F': ' '{if ($2 != "lo") print $2}')
+                if [[ ${#interfaces[@]} -eq 0 ]]; then
+                    log_error "未找到网络接口"
+                    press_any_key
+                    break
+                fi
                 selected_interface="${interfaces[0]}"
-                
-                check_install iptables
+
+                check_install iptables || { press_any_key; continue; }
                 check_firewall_conflict || break
-                
+
                 iptables -t nat -A PREROUTING -i "$selected_interface" -p udp --dport "$start_port:$end_port" -j REDIRECT --to-ports "$redirect_port"
-                
-                if [ $? -eq 0 ]; then
+                if [[ $? -eq 0 ]]; then
                     log_success "端口跳跃设置成功!"
                     log_warn "注意：iptables 规则重启后会失效！"
                 else
@@ -1019,6 +1082,7 @@ install_hysteria2() {
                 press_any_key
                 ;;
             5)
+                check_install curl || { press_any_key; continue; }
                 if bash <(curl -fsSL https://get.hy2.sh/ || { echo '下载失败'; exit 1; }) --remove && rm -rf /etc/hysteria && \
                    userdel -r hysteria &>/dev/null; then
                     rm -f /etc/systemd/system/multi-user.target.wants/hysteria-server*
@@ -1045,27 +1109,29 @@ install_sing_box() {
         echo "3) 重启服务"
         echo "4) 卸载服务"
         echo "========================================="
-        read -p "请输入数字 [1-4] 选择 (默认回车退出)：" s_choice
+        read -r -p "请输入数字 [1-4] 选择 (默认回车退出)：" s_choice
         case "$s_choice" in
             1)
+                check_install curl || { press_any_key; continue; }
                 if bash <(curl -fsSL https://sing-box.app/deb-install.sh || { echo '下载失败'; exit 1; }) && \
                    curl -L -o /etc/sing-box/config.json "https://raw.githubusercontent.com/sezhai/VPS-Script/refs/heads/main/extras/sing-box/config.json"; then
-                    
+
                     if command -v sing-box &>/dev/null; then
                         log_success "sing-box 安装升级成功！"
                         echo -e "UUID: ${BLUE}$(sing-box generate uuid)${PLAIN}"
-                        
-                        local keys_output=$(sing-box generate reality-keypair)
-                        local private_key=$(echo "$keys_output" | grep "PrivateKey" | awk '{print $2}')
-                        local public_key=$(echo "$keys_output" | grep "PublicKey" | awk '{print $2}')
-                        
+
+                        local keys_output private_key public_key
+                        keys_output=$(sing-box generate reality-keypair)
+                        private_key=$(echo "$keys_output" | grep "PrivateKey" | awk '{print $2}')
+                        public_key=$(echo "$keys_output" | grep "PublicKey" | awk '{print $2}')
+
                         export SING_BOX_PBK="$public_key"
 
                         echo -e "PrivateKey: ${BLUE}$private_key${PLAIN}"
                         echo -e "PublicKey:  ${BLUE}$public_key${PLAIN}"
                         echo -e "ShortIds:   ${BLUE}$(sing-box generate rand 8 --hex)${PLAIN}"
                     else
-                         log_error "sing-box 命令执行失败，请检查安装。"
+                        log_error "sing-box 命令执行失败，请检查安装。"
                     fi
                 else
                     log_error "sing-box 安装脚本下载失败！"
@@ -1078,57 +1144,62 @@ install_sing_box() {
                 ;;
             3)
                 CONFIG_PATH="/etc/sing-box/config.json"
-                
+
                 if restart_service "sing-box" "$CONFIG_PATH"; then
-                    ip=$(get_public_ip)
-                    if [[ -z "$ip" ]]; then ip="IP_ADDRESS"; fi
+                    ip=$(get_public_ip || true)
+                    [[ -z "$ip" ]] && ip="IP_ADDRESS"
                     if [[ "$ip" =~ : ]]; then ip_for_url="[$ip]"; else ip_for_url="$ip"; fi
-                    
+
                     if grep -q '"tag":\s*"vmess"' "$CONFIG_PATH"; then
-                        local vmess_block=$(grep -A 20 '"tag":\s*"vmess"' "$CONFIG_PATH")
+                        local vmess_block vmess_uuid vmess_port vmess_path vmess_host
+                        vmess_block=$(grep -A 20 '"tag":\s*"vmess"' "$CONFIG_PATH")
                         vmess_uuid=$(echo "$vmess_block" | grep -Po '"uuid":\s*"\K[^"]+' | head -1)
                         vmess_port=$(echo "$vmess_block" | grep -Po '"listen_port":\s*\K\d+' | head -1)
                         vmess_path=$(echo "$vmess_block" | grep -Po '"path":\s*"\K[^"]+' | head -1)
                         vmess_host=$(echo "$vmess_block" | grep -Po '"server_name":\s*"\K[^"]+' | head -1)
-                        
+
                         if [[ -n "$vmess_uuid" && -n "$vmess_port" ]]; then
-                            vmess_json='{"v":"2","ps":"vmess","add":"'$ip'","port":"'$vmess_port'","id":"'$vmess_uuid'","aid":"0","scy":"auto","net":"ws","type":"none","host":"'$vmess_host'","path":"'$vmess_path'","tls":"tls","sni":"'$vmess_host'","alpn":"http/1.1","fp":"chrome"}'
+                            vmess_json='{"v":"2","ps":"vmess","add":"'"$ip"'","port":"'"$vmess_port"'","id":"'"$vmess_uuid"'","aid":"0","scy":"auto","net":"ws","type":"none","host":"'"$vmess_host"'","path":"'"$vmess_path"'","tls":"tls","sni":"'"$vmess_host"'","alpn":"http/1.1","fp":"chrome"}'
                             echo "vmess 链接如下："
                             echo -e "${BLUE}vmess://$(echo -n "$vmess_json" | base64 -w0)${PLAIN}"
                         fi
                     fi
-                    
+
                     if grep -q '"tag":\s*"reality"' "$CONFIG_PATH"; then
-                        local reality_block=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH")
+                        local reality_block vless_uuid vless_port vless_sni vless_sid PBK
+                        reality_block=$(grep -A 30 '"tag":\s*"reality"' "$CONFIG_PATH")
                         vless_uuid=$(echo "$reality_block" | grep -Po '"uuid":\s*"\K[^"]+' | head -1)
                         vless_port=$(echo "$reality_block" | grep -Po '"listen_port":\s*\K\d+' | head -1)
                         vless_sni=$(echo "$reality_block" | grep -Po '"server_name":\s*"\K[^"]+' | head -1)
                         vless_sid=$(echo "$reality_block" | grep -Po '"short_id":\s*\[\s*"\K[^"]+' | head -1)
-                        
+
                         PBK=${SING_BOX_PBK}
                         if [[ -z "$PBK" ]]; then
-                             PBK=$(echo "$reality_block" | grep -Po '"public_key":\s*"\K[^"]+' | head -1)
+                            PBK=$(echo "$reality_block" | grep -Po '"public_key":\s*"\K[^"]+' | head -1)
                         fi
-                        
+
                         if [[ -n "$vless_uuid" && -n "$vless_port" ]]; then
-                             vless_link="vless://$vless_uuid@$ip_for_url:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$PBK&sid=$vless_sid&type=tcp&headerType=none#reality"
-                             echo "reality 链接如下："
-                             if [[ -z "$PBK" ]]; then
+                            vless_link="vless://$vless_uuid@$ip_for_url:$vless_port?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$vless_sni&fp=chrome&pbk=$PBK&sid=$vless_sid&type=tcp&headerType=none#reality"
+                            echo "reality 链接如下："
+                            if [[ -z "$PBK" ]]; then
                                 echo -e "${YELLOW}注意：公钥 (pbk) 未能读取，链接中该参数为空，请自行补充。${PLAIN}"
-                             fi
-                             echo -e "${BLUE}$vless_link${PLAIN}"
+                            fi
+                            echo -e "${BLUE}$vless_link${PLAIN}"
                         fi
                     fi
-                    
+
                     if grep -q '"tag":\s*"hysteria2"' "$CONFIG_PATH"; then
-                        local hy2_block=$(grep -A 20 '"tag":\s*"hysteria2"' "$CONFIG_PATH")
+                        local hy2_block h2_pass h2_port cert_path h2_domain
+                        hy2_block=$(grep -A 20 '"tag":\s*"hysteria2"' "$CONFIG_PATH")
                         h2_pass=$(echo "$hy2_block" | grep -Po '"password":\s*"\K[^"]+' | head -1)
                         h2_port=$(echo "$hy2_block" | grep -Po '"listen_port":\s*\K\d+' | head -1)
                         cert_path=$(echo "$hy2_block" | grep -Po '"certificate_path":\s*"\K[^"]+' | head -1)
-                        
+
                         if [[ -n "$h2_pass" && -n "$h2_port" && -f "$cert_path" ]]; then
-                            h2_domain=$(get_domain_from_cert "$cert_path")
-                            [[ -n "$h2_domain" ]] && echo -e "hysteria2 链接如下：\n${BLUE}hysteria2://$(urlencode "$h2_pass")@$ip_for_url:$h2_port?sni=$h2_domain&insecure=0#hysteria2${PLAIN}"
+                            h2_domain=$(get_domain_from_cert "$cert_path" || true)
+                            if [[ -n "$h2_domain" ]]; then
+                                echo -e "hysteria2 链接如下：\n${BLUE}hysteria2://$(urlencode "$h2_pass")@$ip_for_url:$h2_port?sni=$h2_domain&insecure=0#hysteria2${PLAIN}"
+                            fi
                         fi
                     fi
                 fi
@@ -1159,12 +1230,18 @@ install_1panel() {
         echo "4) 卸载防火墙"
         echo "5) 卸载面板"
         echo "========================================="
-        read -p "请输入数字 [1-5] 选择 (默认回车退出)：" p_choice
+        read -r -p "请输入数字 [1-5] 选择 (默认回车退出)：" p_choice
         case "$p_choice" in
             1)
-                # 修复：curl 失败收敛
-                curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh && bash quick_start.sh || { echo '下载失败'; rm quick_start.sh; exit 1; }
-                check_status "1Panel 安装"
+                check_install curl || { press_any_key; continue; }
+                # 修复：下载失败不退出整个脚本，仅返回菜单
+                if curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh; then
+                    bash quick_start.sh
+                    check_status "1Panel 安装"
+                else
+                    log_error "下载失败"
+                    rm -f quick_start.sh
+                fi
                 press_any_key
                 ;;
             2)
@@ -1181,7 +1258,7 @@ install_1panel() {
                 press_any_key
                 ;;
             4)
-                apt remove -y ufw && apt purge -y ufw && apt autoremove -y
+                apt-get remove -y ufw && apt-get purge -y ufw && apt-get autoremove -y
                 check_status "ufw 卸载"
                 press_any_key
                 ;;
@@ -1189,7 +1266,7 @@ install_1panel() {
                 if systemctl stop 1panel && 1pctl uninstall && rm -rf /var/lib/1panel /etc/1panel /usr/local/bin/1pctl && \
                    journalctl --vacuum-time=3d && \
                    systemctl stop docker && apt-get purge -y docker-ce docker-ce-cli containerd.io && \
-                   find / \( -name "1panel*" -or -name "docker*" -or -name "containerd*" -or -name "compose*" \) -exec rm -rf {} + && \
+                   find / \( -name "1panel*" -o -name "docker*" -o -name "containerd*" -o -name "compose*" \) -exec rm -rf {} + && \
                    groupdel docker; then
                    log_success "1Panel 卸载完成。"
                 fi
@@ -1228,7 +1305,7 @@ set -o pipefail
 
 while true; do
     display_main_menu
-    read -p "请输入数字 [1-9] 选择(默认回车退出)：" choice
+    read -r -p "请输入数字 [1-9] 选择(默认回车退出)：" choice
     if [[ -z "$choice" ]]; then
         log_success "退出脚本，感谢使用！"
         exit 0
