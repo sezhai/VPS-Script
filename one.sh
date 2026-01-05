@@ -13,7 +13,6 @@ BLUE='\033[1;34m'
 CYAN='\033[1;96m'
 PLAIN='\033[0m'
 
-# apt update 缓存：脚本运行期只执行一次 update，避免重复刷新源
 APT_UPDATED=0
 
 apt_update_once() {
@@ -24,7 +23,6 @@ apt_update_once() {
 }
 
 apt_install_quiet() {
-    # 用于脚本化安装依赖：同功能，只是统一入口
     apt_update_once && apt-get install -y -qq "$@"
 }
 
@@ -129,7 +127,6 @@ restart_service() {
 
     log_info "正在重启 $service_name 服务..."
 
-    # 兼容 Debian/Ubuntu 常见服务名差异：sshd vs ssh
     if ! systemctl list-unit-files --type=service --no-pager 2>/dev/null | awk '{print $1}' | grep -qx "${service_name}.service"; then
         if [[ "$service_name" == "sshd" ]] && systemctl list-unit-files --type=service --no-pager 2>/dev/null | awk '{print $1}' | grep -qx "ssh.service"; then
             service_name="ssh"
@@ -150,7 +147,7 @@ restart_service() {
     fi
 }
 
-# 获取 JSON 值（保持原 grep/regex 方式，不引入 jq）
+# 获取 JSON 值
 get_json_value() {
     local file="$1"
     local key="$2"
@@ -238,7 +235,6 @@ view_vps_info() {
     echo -e "${BLUE}CPU频率:${PLAIN} ${GREEN}${cpu_mhz} MHz${PLAIN}"
 
     echo "-------------"
-    # top 输出受 locale 影响，固定为 C 以降低解析波动（不改变功能，只增强稳定性）
     local cpu_usage
     cpu_usage=$(LC_ALL=C top -bn1 2>/dev/null | awk -F'[, ]+' '/Cpu\(s\)/ {print $3 + $5; exit}')
     [[ -z "$cpu_usage" ]] && cpu_usage=$(top -bn1 2>/dev/null | grep 'Cpu(s)' | awk '{print $2 + $4}')
