@@ -889,7 +889,7 @@ install_xray_tls() {
 
                     vmess_json='{
                         "v": "2",
-                        "ps": "VMESS-WS-TLS",
+                        "ps": "Xray",
                         "add": "'"$ADDRESS"'",
                         "port": "'"$PORT"'",
                         "id": "'"$UUID"'",
