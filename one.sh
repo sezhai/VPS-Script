@@ -889,7 +889,7 @@ install_xray_tls() {
 
                     vmess_json='{
                         "v": "2",
-                        "ps": "VMESS-WS-TLS",
+                        "ps": "Xray",
                         "add": "'"$ADDRESS"'",
                         "port": "'"$PORT"'",
                         "id": "'"$UUID"'",
@@ -973,7 +973,7 @@ install_xray_reality() {
 
                     [[ -z "$ADDRESS" ]] && ADDRESS="IP_ADDRESS"
 
-                    vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray-Reality"
+                    vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray"
                     echo "VLESS链接如下："
                     if [[ -z "$PBK" ]]; then
                         echo -e "${YELLOW}注意：公钥 (pbk) 未能读取，链接中该参数为空，请自行补充。${PLAIN}"
