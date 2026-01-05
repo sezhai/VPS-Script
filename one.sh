@@ -883,7 +883,7 @@ install_xray_tls() {
                     ADDRESS=$(get_public_ip || true)
                     WS_PATH=${WS_PATH:-"/"}
                     TLS=${TLS:-"tls"}
-                    PORT=${PORT:-"443"}
+                    PORT="${PORT//[^0-9]/}"
 
                     [[ -z "$ADDRESS" ]] && ADDRESS="IP_ADDRESS"
 
@@ -962,7 +962,7 @@ install_xray_reality() {
 
                     SNI=${SERVER_NAME:-"your.domain.net"}
                     ADDRESS=$(get_public_ip || true)
-                    PORT=${PORT:-"443"}
+                    PORT="${PORT//[^0-9]/}"
                     FLOW=$(get_json_value "$CONFIG_PATH" "flow")
                     SID=${SHORT_IDS:-""}
 
