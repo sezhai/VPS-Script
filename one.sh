@@ -607,29 +607,31 @@ common_tools() {
                 press_any_key
                 ;;
             6)
-                echo -e "端口     类型    程序名               PID"
                 if command -v ss &>/dev/null; then
+                    echo -e "端口     类型    程序名               PID"
                     ss -tulnp | awk 'NR>1 {
                         split($5, a, ":");
-                        port = (a[2] != "" && a[2] != "*") ? a[2] : a[1];
-                        if ($7 ~ /users:/) {
-                            match($7, /\(\("([^"]+)",pid=([0-9]+)/, arr);
-                            prog = arr[1]; pid = arr[2];
-                        } else {
-                            prog = "-"; pid = "-";
+                        split($7, b, ",");
+                        gsub(/[()]/, "", b[1]);
+                        gsub(/pid=/, "", b[2]);
+                        gsub(/users:/, "", b[1]);
+                        gsub(/"/, "", b[1]);
+                        if (a[2] != "" && a[2] != "*") {
+                            printf "%-8s %-7s %-20s %-6s\n", a[2], $1, b[1], b[2];
                         }
-                        if (port != "" && port != "*")
-                            printf "%-8s %-7s %-20s %-6s\n", port, $1, prog, pid;
                     }'
                 else
-                    check_install netstat net-tools || { log_error "net-tools 安装失败"; press_any_key; continue; }
+                    echo -e "端口     类型    程序名               PID"
                     netstat -tulnp | awk 'NR>2 {
                         split($4, a, ":");
-                        port = a[length(a)];
                         split($7, b, "/");
-                        pid = b[1]; prog = b[2];
-                        if (port != "" && port != "*")
-                            printf "%-8s %-7s %-20s %-6s\n", port, $1, prog, pid;
+                        gsub(/[()]/, "", b[1]);
+                        gsub(/pid=/, "", b[2]);
+                        gsub(/users:/, "", b[1]);
+                        gsub(/"/, "", b[1]);
+                        if (a[2] != "" && a[2] != "*") {
+                            printf "%-8s %-7s %-20s %-6s\n", a[2], $1, b[1], b[2];
+                        }
                     }'
                 fi
                 press_any_key
