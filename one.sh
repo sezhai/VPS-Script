@@ -513,7 +513,7 @@ common_tools() {
     while true; do
         print_header "常用工具"
         echo "1) 查找文件"
-        echo "2) 赋予权限 (chmod 755)"
+        echo "2) 赋予权限"
         echo "3) 删除文件"
         echo "4) 查看进程"
         echo "5) 关闭进程"
@@ -721,7 +721,7 @@ manage_package_menu() {
 install_package() {
     while true; do
         print_header "常用软件包"
-        echo "1) apt 更新"
+        echo "1) apt"
         echo "2) sudo"
         echo "3) wget"
         echo "4) nano"
