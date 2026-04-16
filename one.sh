@@ -745,10 +745,9 @@ install_package() {
             6) manage_package_menu "zip" "zip" ;;
             7) manage_package_menu "git" "git" ;;
             8) manage_package_menu "htop" "htop" ;;
-            9)
-               manage_package_menu "docker" "docker" \
-               "check_install curl && curl -fsSL https://gitee.com/tech-shrimp/docker_installer/releases/download/latest/linux.sh | sudo bash -s docker --mirror Aliyun || { echo 'Docker 安装失败'; exit 1; }" \
-               "sudo systemctl stop docker docker.socket || true; sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras && sudo apt-get autoremove -y && sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker"
+            9)manage_package_menu "docker" "docker" \
+                "curl -fsSL https://get.docker.com | sudo sh" \
+                "sudo systemctl stop docker 2>/dev/null || true; sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras || true; sudo apt-get autoremove -y; sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker"
                 ;;
             "") return ;;
             *) log_error "无效选项" ;;
