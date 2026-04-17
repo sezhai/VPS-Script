@@ -1233,7 +1233,6 @@ install_1panel() {
                 check_install curl || { press_any_key; continue; }
                 # 修复：下载失败不退出整个脚本，仅返回菜单
                 if curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh; then
-                    bash quick_start.sh
                     check_status "1Panel 安装"
                 else
                     log_error "下载失败"
