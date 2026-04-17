@@ -1223,7 +1223,7 @@ install_1panel() {
         print_header "安装 1Panel"
         echo "1) 安装面板"
         echo "2) 查看信息"
-        echo "3) 安装防火墙 (ufw)"
+        echo "3) 安装防火墙"
         echo "4) 卸载防火墙"
         echo "5) 卸载面板"
         echo "========================================="
