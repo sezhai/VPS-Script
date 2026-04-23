@@ -385,9 +385,20 @@ user_sysinit() {
 
     echo "开始系统清理..."
 
-    # 云实例检测：检测到 metadata 服务则标记为云环境
     is_cloud_instance() {
-        curl -sf --max-time 2 http://169.254.169.254/ >/dev/null 2>&1
+        local asset_tag
+        asset_tag=$(cat /sys/class/dmi/id/chassis-asset-tag 2>/dev/null)
+        [[ "$asset_tag" == *"OracleCloud"* ]] && return 0
+        command -v cloud-init >/dev/null 2>&1 && return 0
+        [[ -d /etc/cloud ]] && return 0
+        networkctl status 2>/dev/null | grep -q "State: routable" && return 0
+        if command -v curl >/dev/null 2>&1; then
+            curl -sf --max-time 2 http://169.254.169.254/ >/dev/null 2>&1 && return 0
+        fi
+        if command -v wget >/dev/null 2>&1; then
+            wget -q --timeout=2 -O /dev/null http://169.254.169.254/ >/dev/null 2>&1 && return 0
+        fi
+        return 1
     }
 
     local _is_cloud=false
@@ -456,14 +467,9 @@ user_sysinit() {
     for pkg in "${REMOVE_PKGS[@]}"; do
         if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
             log_info "删除APT包: $pkg"
-            # purge 前先备份 iptables 规则，防止 docker 卸载钩子执行 iptables -F
-            local ipt_backup
-            ipt_backup=$(iptables-save 2>/dev/null)
-            apt-get remove --purge -y -qq "$pkg" 2>/dev/null || true
-            # purge 后恢复 iptables 规则
-            if [[ -n "$ipt_backup" ]]; then
-                echo "$ipt_backup" | iptables-restore 2>/dev/null || true
-            fi
+            # --no-triggers 阻止 docker purge 钩子执行 iptables -F
+            dpkg --purge --no-triggers "$pkg" 2>/dev/null || \
+                apt-get remove --purge -y -qq "$pkg" 2>/dev/null || true
         fi
     done
 
@@ -488,12 +494,11 @@ user_sysinit() {
         apt_update_once 2>/dev/null || true
     fi
 
-    # 网络服务处理：云实例跳过，物理机/非云环境才重启
     if [[ "$_is_cloud" == true ]]; then
-        log_warn "云实例环境：跳过网络服务重启，仅重启 DNS 解析"
+        log_warn "云实例环境：仅重启 systemd-resolved，跳过网络服务"
         systemctl restart systemd-resolved 2>/dev/null || true
     else
-        log_info "重启网络相关服务..."
+        log_info "非云环境：重启网络相关服务..."
         for service in systemd-resolved systemd-networkd networking; do
             systemctl is-enabled "$service" >/dev/null 2>&1 && \
                 systemctl restart "$service" 2>/dev/null || true
