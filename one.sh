@@ -385,6 +385,17 @@ user_sysinit() {
 
     echo "开始系统清理..."
 
+    # 云实例检测：检测到 metadata 服务则标记为云环境
+    is_cloud_instance() {
+        curl -sf --max-time 2 http://169.254.169.254/ >/dev/null 2>&1
+    }
+
+    local _is_cloud=false
+    if is_cloud_instance; then
+        _is_cloud=true
+        log_warn "检测到云实例环境，将跳过网络服务重启"
+    fi
+
     log_info "清理后装应用文件..."
     local CLEANUP_PATHS=(
         "/usr/local/bin/xray" "/usr/local/bin/v2ray" "/usr/local/bin/v2ctl"
@@ -445,7 +456,14 @@ user_sysinit() {
     for pkg in "${REMOVE_PKGS[@]}"; do
         if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
             log_info "删除APT包: $pkg"
+            # purge 前先备份 iptables 规则，防止 docker 卸载钩子执行 iptables -F
+            local ipt_backup
+            ipt_backup=$(iptables-save 2>/dev/null)
             apt-get remove --purge -y -qq "$pkg" 2>/dev/null || true
+            # purge 后恢复 iptables 规则
+            if [[ -n "$ipt_backup" ]]; then
+                echo "$ipt_backup" | iptables-restore 2>/dev/null || true
+            fi
         fi
     done
 
@@ -470,10 +488,17 @@ user_sysinit() {
         apt_update_once 2>/dev/null || true
     fi
 
-    for service in systemd-resolved systemd-networkd networking; do
-        systemctl is-enabled "$service" >/dev/null 2>&1 && \
-            systemctl restart "$service" 2>/dev/null || true
-    done
+    # 网络服务处理：云实例跳过，物理机/非云环境才重启
+    if [[ "$_is_cloud" == true ]]; then
+        log_warn "云实例环境：跳过网络服务重启，仅重启 DNS 解析"
+        systemctl restart systemd-resolved 2>/dev/null || true
+    else
+        log_info "重启网络相关服务..."
+        for service in systemd-resolved systemd-networkd networking; do
+            systemctl is-enabled "$service" >/dev/null 2>&1 && \
+                systemctl restart "$service" 2>/dev/null || true
+        done
+    fi
 
     log_success "系统初始化完成！"
     read -r -p "$(echo -e '\033[0;31m输入y重启系统（默认回车退出）:\033[0m ') " reboot_choice
