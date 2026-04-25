@@ -1262,7 +1262,9 @@ install_1panel() {
             1)
                 check_install curl || { press_any_key; continue; }
                 if curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh; then
+                    bash quick_start.sh
                     check_status "1Panel 安装"
+                    rm -f quick_start.sh
                 else
                     log_error "下载失败"
                     rm -f quick_start.sh
