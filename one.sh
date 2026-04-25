@@ -1289,11 +1289,9 @@ install_1panel() {
                 ;;
             5)
                 if systemctl stop 1panel && 1pctl uninstall && rm -rf /var/lib/1panel /etc/1panel /usr/local/bin/1pctl && \
-                   journalctl --vacuum-time=3d && \
-                   systemctl stop docker && apt-get purge -y docker-ce docker-ce-cli containerd.io && \
-                   find / \( -name "1panel*" -o -name "docker*" -o -name "containerd*" -o -name "compose*" \) -exec rm -rf {} + && \
-                   groupdel docker; then
-                   log_success "1Panel 卸载完成。"
+                    journalctl --vacuum-time=3d && \
+                    find / -name "1panel*" -exec rm -rf {} +; then
+                    log_success "1Panel 卸载完成。"
                 fi
                 press_any_key
                 ;;
