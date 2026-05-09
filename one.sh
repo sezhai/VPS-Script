@@ -948,73 +948,117 @@ install_xray_tls() {
 
 install_xray_reality() {
     while true; do
-        print_header "VLESS-TCP-REALITY"
+        echo "========================================="
+        echo -e "               \e[1;34mVLESS-TCP-REALITY\e[0m   "
+        echo "========================================="
         echo "1) 安装升级"
         echo "2) 编辑配置"
         echo "3) 重启服务"
         echo "========================================="
-        read -r -p "请输入数字 [1-3] 选择(默认回车退出)：" xray_choice
+        read -p "请输入数字 [1-3] 选择(默认回车退出)：" xray_choice
         case "$xray_choice" in
             1)
-                check_install curl || { press_any_key; continue; }
-                if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh || { echo '下载失败'; exit 1; })" @ install && \
-                   curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-REALITY%20(without%20being%20stolen)/config_server.jsonc"; then
-                    log_success "Xray 安装升级完成！"
-                    echo -e "UUID: ${BLUE}$(xray uuid)${PLAIN}"
-
-                    local keys_output private_key public_key
-                    keys_output=$(xray x25519)
-                    private_key=$(echo "$keys_output" | grep "Private key:" | awk '{print $3}')
-                    public_key=$(echo "$keys_output" | grep "Public key:" | awk '{print $3}')
-
-                    export PRIVATE_KEY="$private_key"
-                    export PUBLIC_KEY="$public_key"
-
-                    echo -e "PrivateKey: ${BLUE}$private_key${PLAIN}"
-                    echo -e "PublicKey:  ${BLUE}$public_key${PLAIN}"
-                    check_install openssl || true
-                    echo -e "ShortIds:   ${BLUE}$(openssl rand -hex 8 2>/dev/null || echo "")${PLAIN}"
+               if bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install && \
+                  sudo curl -o /usr/local/etc/xray/config.json "https://raw.githubusercontent.com/XTLS/Xray-examples/refs/heads/main/VLESS-TCP-REALITY%20(without%20being%20stolen)/config_server.jsonc"; then
+                echo -e "\e[32mXray 安装升级完成！\e[0m"
+                echo "以下是UUID："
+                echo -e "\e[34m$(xray uuid)\e[0m"
+                echo "以下是私钥："
+                keys=$(xray x25519)
+                export PRIVATE_KEY=$(echo "$keys" | awk '/PrivateKey/ {print $2}')
+                export PUBLIC_KEY=$(echo "$keys" | awk '/Password/  {print $2}')
+                echo -e "\e[34m$PRIVATE_KEY\e[0m"                
+                echo "以下是ShortIds："                
+                echo -e "\e[34m$(openssl rand -hex 8)\e[0m"
                 else
-                    log_error "Xray 安装升级失败！"
+                echo -e "\e[31mXray 安装升级失败！\e[0m"
                 fi
-                press_any_key
+                read -n 1 -s -r -p "按任意键返回..."
+                echo
                 ;;
             2)
-                edit_file "/usr/local/etc/xray/config.json" "提示：将UUID、目标网站及PrivateKey填入配置文件中，ShortIds非必须。"
-                press_any_key
+                echo -e "\e[33m提示：将UUID、目标网站及私钥填入配置文件中，ShortIds非必须。\e[0m"
+                read -n 1 -s -r -p "按任意键继续..."                                
+                if ! command -v nano >/dev/null 2>&1; then
+                sudo apt update >/dev/null 2>&1 && sudo apt install -y nano >/dev/null 2>&1
+                fi
+                if ! command -v nano >/dev/null 2>&1; then
+                echo -e "\e[31m错误：无法安装或找到 nano！\e[0m" >&2
+                exit 1
+                fi
+                sudo nano /usr/local/etc/xray/config.json
+                read -n 1 -s -r -p "按任意键返回..."
+                echo
                 ;;
             3)
                 CONFIG_PATH="/usr/local/etc/xray/config.json"
-                if restart_service "xray" "$CONFIG_PATH"; then
-                    UUID=$(get_json_value "$CONFIG_PATH" "id")
-                    PORT=$(get_json_value "$CONFIG_PATH" "port")
-                    SERVER_NAME=$(grep -Po '"serverNames"\s*:\s*\[\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null | head -n 1)
-                    SHORT_IDS=$(grep -Po '"shortIds"\s*:\s*\[\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null | head -n 1)
-
-                    SNI=${SERVER_NAME:-"your.domain.net"}
-                    ADDRESS=$(get_public_ip || true)
-                    PORT="${PORT//[^0-9]/}"
-                    FLOW=$(get_json_value "$CONFIG_PATH" "flow")
-                    SID=${SHORT_IDS:-""}
-
-                    PBK=${PUBLIC_KEY}
-                    if [[ -z "$PBK" ]]; then
-                        PBK=$(get_json_value "$CONFIG_PATH" "publicKey")
+                remove_spaces_and_quotes() {
+                    echo "$1" | sed 's/[[:space:]]*$//;s/^ *//;s/^"//;s/"$//'
+}
+                extract_field() {
+                    local pattern=$1
+                    local match=$2
+                    grep -aPo "\"$pattern\":\s*$match" "$CONFIG_PATH" | head -n 1 | sed -E "s/\"$pattern\":\s*//;s/^\"//;s/\"$//"
+}
+                extract_server_name() {
+                    local result=$(grep -A 5 '"serverNames"' "$CONFIG_PATH" | grep -o '"[^"]*"' | head -n 2 | tail -n 1 | sed 's/"//g')
+                    echo "$result"
+                }
+                extract_list_field() {
+                    local list_parent=$1
+                    local list_field=$2
+                    if [[ "$list_field" == "shortIds" || "$list_field" == "serverNames" ]]; then
+                        local result=$(grep -aA 2 "\"$list_field\": \[" "$CONFIG_PATH" | awk 'NR==2{gsub(/^\s+|\s*\/\/.*$/,"");split($0,a,","); for (i in a) {gsub(/^["\s]+|["\s]+$/,"",a[i]);printf "%s ",a[i]}}')
+                        if [[ -n "$result" ]]; then
+                            remove_spaces_and_quotes "$result"
+                        fi
+                    else
+                        grep -aPoz "\"$list_parent\":\s*\[\s*\{[^}]*\}\s*\]" "$CONFIG_PATH" | grep -aPo "\"$list_field\":\s*\"[^\"]*\"" | head -n 1 | sed -E "s/\"$list_field\":\s*\"([^\"]*)\"/\1/"
                     fi
-
-                    [[ -z "$ADDRESS" ]] && ADDRESS="IP_ADDRESS"
-
-                    vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray"
-                    echo "VLESS链接如下："
-                    if [[ -z "$PBK" ]]; then
-                        echo -e "${YELLOW}注意：公钥 (pbk) 未能读取，链接中该参数为空，请自行补充。${PLAIN}"
+                }
+                get_public_ip() {
+                    ipv4=$(curl -s https://api.ipify.org)
+                    if [[ -n "$ipv4" ]]; then
+                    echo "$ipv4"
+                    else
+                    curl -s -6 https://api64.ipify.org || echo "127.0.0.1"
                     fi
-                    echo -e "${BLUE}$vless_uri${PLAIN}"
-                fi
-                press_any_key
+}
+                while true; do
+                    sudo -H systemctl restart xray 2>/dev/null
+                    sleep 2
+                    if ! systemctl is-active --quiet xray; then
+                       echo -e "\e[31m未能启动 xray 服务，请检查日志。\e[0m"
+                       systemctl status xray --no-pager
+                       break
+                    else
+                        echo -e "\e[32mxray已启动！\e[0m"
+                    fi
+                UUID=$(extract_list_field "clients" "id")
+                PORT=$(extract_field "port" "\d+")
+                TLS=$(extract_field "security" "\"[^\"]*\"")
+                SERVER_NAME=$(extract_server_name)
+                SHORT_IDS=$(extract_list_field "realitySettings" "shortIds")
+                SNI=${SERVER_NAME:-"your.domain.net"}
+                ADDRESS=$(get_public_ip)
+                PORT=${PORT:-"443"}
+                FLOW=$(extract_field "flow" "\"[^\"]*\"")
+                SID=${SHORT_IDS:-""}
+                PBK=${PUBLIC_KEY}
+                vless_uri="vless://${UUID}@${ADDRESS}:${PORT}?encryption=none&flow=${FLOW}&security=reality&sni=${SNI}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp&headerType=none#Xray"
+                echo "VLESS链接如下："
+                echo -e "\e[34m$vless_uri\e[0m"
+                break
+                done
+                read -n 1 -s -r -p "按任意键返回..."
+                echo
                 ;;
-            "") return ;;
-            *) log_error "无效选项" ;;
+            "") 
+                return
+                ;;                        
+            *)
+                echo -e "\e[31m无效选项，请重新输入。\e[0m"
+                ;;
         esac
     done
 }
